@@ -1,0 +1,19 @@
+{
+  "session_id": "session_1775389932",
+  "date": "2026-04-05 15:52",
+  "duration": "00:01",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:01",
+      "seconds": 1,
+      "emotion": "happy",
+      "confidence": 0.9683926678391088
+    }
+  ]
+}
