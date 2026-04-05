@@ -1,0 +1,589 @@
+{
+  "session_id": "session_1775392385",
+  "date": "2026-04-05 16:37",
+  "duration": "04:40",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:03",
+      "seconds": 3,
+      "emotion": "neutral",
+      "confidence": 0.9763034106802431
+    },
+    {
+      "time": "00:04",
+      "seconds": 4,
+      "emotion": "happy",
+      "confidence": 0.4973747065692596
+    },
+    {
+      "time": "00:07",
+      "seconds": 7,
+      "emotion": "neutral",
+      "confidence": 0.5627912530526763
+    },
+    {
+      "time": "00:08",
+      "seconds": 8,
+      "emotion": "happy",
+      "confidence": 0.5493188236209412
+    },
+    {
+      "time": "00:09",
+      "seconds": 9,
+      "emotion": "neutral",
+      "confidence": 0.5104665117358116
+    },
+    {
+      "time": "00:09",
+      "seconds": 9,
+      "emotion": "happy",
+      "confidence": 0.5183734654863971
+    },
+    {
+      "time": "00:11",
+      "seconds": 11,
+      "emotion": "neutral",
+      "confidence": 0.6175709733888688
+    },
+    {
+      "time": "00:14",
+      "seconds": 14,
+      "emotion": "neutral",
+      "confidence": 0.7276395083062575
+    },
+    {
+      "time": "00:17",
+      "seconds": 17,
+      "emotion": "neutral",
+      "confidence": 0.8060218694728849
+    },
+    {
+      "time": "00:20",
+      "seconds": 20,
+      "emotion": "neutral",
+      "confidence": 0.8523635660071335
+    },
+    {
+      "time": "00:23",
+      "seconds": 23,
+      "emotion": "happy",
+      "confidence": 0.5463868887054731
+    },
+    {
+      "time": "00:26",
+      "seconds": 26,
+      "emotion": "happy",
+      "confidence": 0.7948651871366232
+    },
+    {
+      "time": "00:29",
+      "seconds": 29,
+      "emotion": "happy",
+      "confidence": 0.7395465310375949
+    },
+    {
+      "time": "00:32",
+      "seconds": 32,
+      "emotion": "happy",
+      "confidence": 0.6647719528879825
+    },
+    {
+      "time": "00:35",
+      "seconds": 35,
+      "emotion": "happy",
+      "confidence": 0.5836446935246018
+    },
+    {
+      "time": "00:35",
+      "seconds": 35,
+      "emotion": "neutral",
+      "confidence": 0.534547698894279
+    },
+    {
+      "time": "00:38",
+      "seconds": 38,
+      "emotion": "neutral",
+      "confidence": 0.7015367080878714
+    },
+    {
+      "time": "00:41",
+      "seconds": 41,
+      "emotion": "neutral",
+      "confidence": 0.916591843307159
+    },
+    {
+      "time": "00:44",
+      "seconds": 44,
+      "emotion": "neutral",
+      "confidence": 0.8337952575796912
+    },
+    {
+      "time": "00:47",
+      "seconds": 47,
+      "emotion": "neutral",
+      "confidence": 0.6782087073829605
+    },
+    {
+      "time": "00:50",
+      "seconds": 50,
+      "emotion": "neutral",
+      "confidence": 0.49906121731252
+    },
+    {
+      "time": "00:53",
+      "seconds": 53,
+      "emotion": "neutral",
+      "confidence": 0.6437543515850183
+    },
+    {
+      "time": "00:56",
+      "seconds": 56,
+      "emotion": "neutral",
+      "confidence": 0.6964953231725188
+    },
+    {
+      "time": "00:59",
+      "seconds": 59,
+      "emotion": "neutral",
+      "confidence": 0.4926519907616456
+    },
+    {
+      "time": "01:02",
+      "seconds": 62,
+      "emotion": "happy",
+      "confidence": 0.6298163223426824
+    },
+    {
+      "time": "01:05",
+      "seconds": 65,
+      "emotion": "neutral",
+      "confidence": 0.5282082163792475
+    },
+    {
+      "time": "01:08",
+      "seconds": 68,
+      "emotion": "neutral",
+      "confidence": 0.6638209258195038
+    },
+    {
+      "time": "01:11",
+      "seconds": 71,
+      "emotion": "neutral",
+      "confidence": 0.7560405066591422
+    },
+    {
+      "time": "01:14",
+      "seconds": 74,
+      "emotion": "neutral",
+      "confidence": 0.5611575746132667
+    },
+    {
+      "time": "01:17",
+      "seconds": 77,
+      "emotion": "neutral",
+      "confidence": 0.5911037933198006
+    },
+    {
+      "time": "01:20",
+      "seconds": 80,
+      "emotion": "neutral",
+      "confidence": 0.5268410407664578
+    },
+    {
+      "time": "01:23",
+      "seconds": 83,
+      "emotion": "neutral",
+      "confidence": 0.5692918219646681
+    },
+    {
+      "time": "01:26",
+      "seconds": 86,
+      "emotion": "neutral",
+      "confidence": 0.613723610986026
+    },
+    {
+      "time": "01:29",
+      "seconds": 89,
+      "emotion": "happy",
+      "confidence": 0.4624960989919825
+    },
+    {
+      "time": "01:32",
+      "seconds": 92,
+      "emotion": "neutral",
+      "confidence": 0.5686250072160556
+    },
+    {
+      "time": "01:35",
+      "seconds": 95,
+      "emotion": "happy",
+      "confidence": 0.5323914894728792
+    },
+    {
+      "time": "01:38",
+      "seconds": 98,
+      "emotion": "neutral",
+      "confidence": 0.5510847969547227
+    },
+    {
+      "time": "01:41",
+      "seconds": 101,
+      "emotion": "happy",
+      "confidence": 0.5010373274150404
+    },
+    {
+      "time": "01:44",
+      "seconds": 104,
+      "emotion": "neutral",
+      "confidence": 0.5856229818438026
+    },
+    {
+      "time": "01:47",
+      "seconds": 107,
+      "emotion": "neutral",
+      "confidence": 0.654287361038361
+    },
+    {
+      "time": "01:50",
+      "seconds": 110,
+      "emotion": "neutral",
+      "confidence": 0.598981330978968
+    },
+    {
+      "time": "01:53",
+      "seconds": 113,
+      "emotion": "happy",
+      "confidence": 0.4706143419697093
+    },
+    {
+      "time": "01:56",
+      "seconds": 116,
+      "emotion": "neutral",
+      "confidence": 0.5889111839970713
+    },
+    {
+      "time": "01:59",
+      "seconds": 119,
+      "emotion": "neutral",
+      "confidence": 0.6655102957941801
+    },
+    {
+      "time": "02:02",
+      "seconds": 122,
+      "emotion": "neutral",
+      "confidence": 0.7524272540557446
+    },
+    {
+      "time": "02:05",
+      "seconds": 125,
+      "emotion": "neutral",
+      "confidence": 0.5313913603497721
+    },
+    {
+      "time": "02:08",
+      "seconds": 128,
+      "emotion": "happy",
+      "confidence": 0.5999607213977677
+    },
+    {
+      "time": "02:11",
+      "seconds": 131,
+      "emotion": "happy",
+      "confidence": 0.7171360487316166
+    },
+    {
+      "time": "02:14",
+      "seconds": 134,
+      "emotion": "happy",
+      "confidence": 0.5098157024421962
+    },
+    {
+      "time": "02:17",
+      "seconds": 137,
+      "emotion": "neutral",
+      "confidence": 0.6247284062194828
+    },
+    {
+      "time": "02:20",
+      "seconds": 140,
+      "emotion": "happy",
+      "confidence": 0.5379662505737035
+    },
+    {
+      "time": "02:23",
+      "seconds": 143,
+      "emotion": "happy",
+      "confidence": 0.5496563329803259
+    },
+    {
+      "time": "02:26",
+      "seconds": 146,
+      "emotion": "neutral",
+      "confidence": 0.592049796938826
+    },
+    {
+      "time": "02:29",
+      "seconds": 149,
+      "emotion": "neutral",
+      "confidence": 0.7053204041497624
+    },
+    {
+      "time": "02:32",
+      "seconds": 152,
+      "emotion": "neutral",
+      "confidence": 0.7624363480931634
+    },
+    {
+      "time": "02:35",
+      "seconds": 155,
+      "emotion": "neutral",
+      "confidence": 0.7927991214001064
+    },
+    {
+      "time": "02:38",
+      "seconds": 158,
+      "emotion": "neutral",
+      "confidence": 0.8283156270932573
+    },
+    {
+      "time": "02:41",
+      "seconds": 161,
+      "emotion": "neutral",
+      "confidence": 0.8678923185615103
+    },
+    {
+      "time": "02:44",
+      "seconds": 164,
+      "emotion": "neutral",
+      "confidence": 0.9022169509557844
+    },
+    {
+      "time": "02:47",
+      "seconds": 167,
+      "emotion": "neutral",
+      "confidence": 0.9232668426344826
+    },
+    {
+      "time": "02:50",
+      "seconds": 170,
+      "emotion": "neutral",
+      "confidence": 0.9055327436621385
+    },
+    {
+      "time": "02:53",
+      "seconds": 173,
+      "emotion": "neutral",
+      "confidence": 0.8839463454419361
+    },
+    {
+      "time": "02:56",
+      "seconds": 176,
+      "emotion": "neutral",
+      "confidence": 0.6197330003946866
+    },
+    {
+      "time": "02:59",
+      "seconds": 179,
+      "emotion": "neutral",
+      "confidence": 0.43521480218733444
+    },
+    {
+      "time": "03:02",
+      "seconds": 182,
+      "emotion": "happy",
+      "confidence": 0.5236445140367686
+    },
+    {
+      "time": "03:05",
+      "seconds": 185,
+      "emotion": "happy",
+      "confidence": 0.5816681863328359
+    },
+    {
+      "time": "03:08",
+      "seconds": 188,
+      "emotion": "happy",
+      "confidence": 0.6024402231709747
+    },
+    {
+      "time": "03:11",
+      "seconds": 191,
+      "emotion": "happy",
+      "confidence": 0.42345050607116463
+    },
+    {
+      "time": "03:14",
+      "seconds": 194,
+      "emotion": "fear",
+      "confidence": 0.5101154583762676
+    },
+    {
+      "time": "03:17",
+      "seconds": 197,
+      "emotion": "fear",
+      "confidence": 0.5648628239502754
+    },
+    {
+      "time": "03:20",
+      "seconds": 200,
+      "emotion": "fear",
+      "confidence": 0.6896816378306808
+    },
+    {
+      "time": "03:23",
+      "seconds": 203,
+      "emotion": "fear",
+      "confidence": 0.4944778530461384
+    },
+    {
+      "time": "03:26",
+      "seconds": 206,
+      "emotion": "fear",
+      "confidence": 0.5656200590130724
+    },
+    {
+      "time": "03:29",
+      "seconds": 209,
+      "emotion": "fear",
+      "confidence": 0.6854955178962691
+    },
+    {
+      "time": "03:32",
+      "seconds": 212,
+      "emotion": "fear",
+      "confidence": 0.5225372656135568
+    },
+    {
+      "time": "03:35",
+      "seconds": 215,
+      "emotion": "happy",
+      "confidence": 0.4876704482885514
+    },
+    {
+      "time": "03:38",
+      "seconds": 218,
+      "emotion": "happy",
+      "confidence": 0.41036219161526233
+    },
+    {
+      "time": "03:41",
+      "seconds": 221,
+      "emotion": "happy",
+      "confidence": 0.5819465874919051
+    },
+    {
+      "time": "03:44",
+      "seconds": 224,
+      "emotion": "neutral",
+      "confidence": 0.434107277573523
+    },
+    {
+      "time": "03:47",
+      "seconds": 227,
+      "emotion": "neutral",
+      "confidence": 0.5981623241153665
+    },
+    {
+      "time": "03:50",
+      "seconds": 230,
+      "emotion": "neutral",
+      "confidence": 0.7137657100198387
+    },
+    {
+      "time": "03:53",
+      "seconds": 233,
+      "emotion": "neutral",
+      "confidence": 0.7943973143044079
+    },
+    {
+      "time": "03:56",
+      "seconds": 236,
+      "emotion": "neutral",
+      "confidence": 0.8399509566771203
+    },
+    {
+      "time": "03:59",
+      "seconds": 239,
+      "emotion": "neutral",
+      "confidence": 0.8839611175171481
+    },
+    {
+      "time": "04:02",
+      "seconds": 242,
+      "emotion": "neutral",
+      "confidence": 0.9144729260775917
+    },
+    {
+      "time": "04:05",
+      "seconds": 245,
+      "emotion": "neutral",
+      "confidence": 0.9339015538070377
+    },
+    {
+      "time": "04:08",
+      "seconds": 248,
+      "emotion": "neutral",
+      "confidence": 0.6635273131247459
+    },
+    {
+      "time": "04:11",
+      "seconds": 251,
+      "emotion": "happy",
+      "confidence": 0.5175265809073216
+    },
+    {
+      "time": "04:14",
+      "seconds": 254,
+      "emotion": "neutral",
+      "confidence": 0.6063971064663547
+    },
+    {
+      "time": "04:17",
+      "seconds": 257,
+      "emotion": "neutral",
+      "confidence": 0.7201001688680759
+    },
+    {
+      "time": "04:20",
+      "seconds": 260,
+      "emotion": "neutral",
+      "confidence": 0.7981807896144477
+    },
+    {
+      "time": "04:23",
+      "seconds": 263,
+      "emotion": "neutral",
+      "confidence": 0.8553195060215738
+    },
+    {
+      "time": "04:26",
+      "seconds": 266,
+      "emotion": "neutral",
+      "confidence": 0.8942884329453874
+    },
+    {
+      "time": "04:29",
+      "seconds": 269,
+      "emotion": "neutral",
+      "confidence": 0.920739730778012
+    },
+    {
+      "time": "04:32",
+      "seconds": 272,
+      "emotion": "neutral",
+      "confidence": 0.950364868223236
+    },
+    {
+      "time": "04:35",
+      "seconds": 275,
+      "emotion": "neutral",
+      "confidence": 0.7619607512479365
+    }
+  ]
+}

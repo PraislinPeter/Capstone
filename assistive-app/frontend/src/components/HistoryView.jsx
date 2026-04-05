@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Play, Clock, Calendar, ChevronRight, Film,
-  BarChart3, ArrowLeft, Download, TrendingUp, ListVideo
+  BarChart3, ArrowLeft, Download, TrendingUp, ListVideo,
+  FileText, MessageSquare, Plus, Trash2, AlertTriangle, CheckCircle
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -29,6 +30,12 @@ function parseSeconds(timeStr) {
   const parts = timeStr.split(':').map(Number);
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
   return parts[0] * 60 + (parts[1] || 0);
+}
+
+function formatTime(secs) {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 // ── Session List Panel ──────────────────────────────────────────────────────
@@ -82,7 +89,25 @@ function SessionList({ sessions, selectedSession, onSelect }) {
 }
 
 // ── Video Panel ─────────────────────────────────────────────────────────────
-function VideoPanel({ session, videoRef }) {
+function VideoPanel({ session, videoRef, onTimeUpdate }) {
+  const [currentEmotion, setCurrentEmotion] = useState(null);
+
+  // Reset overlay when session changes
+  useEffect(() => { setCurrentEmotion(null); }, [session?.id]);
+
+  const handleTimeUpdate = (e) => {
+    const t = e.target.currentTime;
+    onTimeUpdate?.(t);
+    const tl = session?.timeline || [];
+    let emo = null;
+    for (let i = tl.length - 1; i >= 0; i--) {
+      if (parseSeconds(tl[i].time) <= t) { emo = tl[i].emotion; break; }
+    }
+    setCurrentEmotion(emo);
+  };
+
+  const emotionStyle = getEmotionStyle(currentEmotion);
+
   return (
     <div className="flex flex-col gap-3 h-full">
       {/* Video */}
@@ -94,7 +119,16 @@ function VideoPanel({ session, videoRef }) {
           preload="auto"
           className="w-full aspect-video object-contain bg-black"
           src={`http://localhost:8000${session.video_url}`}
+          onTimeUpdate={handleTimeUpdate}
         />
+
+        {/* Emotion overlay */}
+        {currentEmotion && (
+          <div className={`absolute top-3 left-3 px-3 py-1.5 rounded-xl font-bold text-sm capitalize shadow-lg pointer-events-none ${emotionStyle.bg} ${emotionStyle.text}`}>
+            {currentEmotion}
+          </div>
+        )}
+
         <a
           href={`http://localhost:8000${session.video_url}`}
           download
@@ -123,8 +157,70 @@ function VideoPanel({ session, videoRef }) {
   );
 }
 
+// ── Notes Tab ───────────────────────────────────────────────────────────────
+function NotesTab({ currentVideoSecs, onSeek, notes, onAddNote, onDeleteNote }) {
+  const [noteText, setNoteText] = useState('');
+
+  const handleAdd = () => {
+    if (!noteText.trim()) return;
+    onAddNote(noteText.trim());
+    setNoteText('');
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Input area */}
+      <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100">
+        <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest mb-2">
+          Add note at {formatTime(currentVideoSecs)}
+        </p>
+        <textarea
+          value={noteText}
+          onChange={e => setNoteText(e.target.value)}
+          placeholder="Type clinical observation..."
+          rows={2}
+          className="w-full text-xs p-2 rounded-lg border border-indigo-200 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAdd(); }}
+        />
+        <button
+          onClick={handleAdd}
+          disabled={!noteText.trim()}
+          className="mt-2 flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-lg disabled:opacity-40 hover:bg-indigo-700 transition-colors"
+        >
+          <Plus size={12} /> Add at {formatTime(currentVideoSecs)}
+        </button>
+      </div>
+
+      {/* Notes list */}
+      <div className="space-y-2">
+        {notes.length === 0 ? (
+          <p className="text-center text-slate-400 text-xs py-6">No notes yet. Play the video and add observations.</p>
+        ) : (
+          notes.map(note => (
+            <div key={note.id} className="flex gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+              <button
+                onClick={() => onSeek(note.timestamp_str)}
+                className="shrink-0 px-2 py-0.5 bg-indigo-100 text-indigo-600 font-mono text-[10px] font-bold rounded hover:bg-indigo-200 transition-colors self-start mt-0.5"
+              >
+                {note.timestamp_str}
+              </button>
+              <p className="flex-1 text-xs text-slate-700 leading-relaxed">{note.note_text}</p>
+              <button
+                onClick={() => onDeleteNote(note.id)}
+                className="shrink-0 text-slate-300 hover:text-rose-400 transition-colors self-start mt-0.5"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Analysis Panel ──────────────────────────────────────────────────────────
-function AnalysisPanel({ session, sessions, onSeek }) {
+function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsights, notes, onAddNote, onDeleteNote }) {
   const [tab, setTab] = useState('distribution');
   const { timeline, duration } = session;
 
@@ -174,7 +270,8 @@ function AnalysisPanel({ session, sessions, onSeek }) {
 
   const tabs = [
     { id: 'distribution', label: 'Distribution', icon: <BarChart3 size={12} /> },
-    { id: 'log',          label: 'Event Log',    icon: <ListVideo size={12} /> },
+    { id: 'notes',        label: 'Notes',         icon: <MessageSquare size={12} /> },
+    { id: 'log',          label: 'Event Log',     icon: <ListVideo size={12} /> },
     ...(trendData ? [{ id: 'trend', label: 'Trend', icon: <TrendingUp size={12} /> }] : []),
   ];
 
@@ -258,6 +355,17 @@ function AnalysisPanel({ session, sessions, onSeek }) {
           </>
         )}
 
+        {tab === 'notes' && (
+          <NotesTab
+            sessionDbId={session.id}
+            currentVideoSecs={currentVideoSecs}
+            onSeek={onSeek}
+            notes={notes}
+            onAddNote={onAddNote}
+            onDeleteNote={onDeleteNote}
+          />
+        )}
+
         {tab === 'log' && (
           <div className="space-y-2">
             {timeline?.length > 0 ? timeline.map((event, idx) => {
@@ -285,6 +393,22 @@ function AnalysisPanel({ session, sessions, onSeek }) {
 
         {tab === 'trend' && trendData && (
           <>
+            {trendInsights?.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {trendInsights.map((insight, i) => (
+                  <div key={i} className={`flex items-start gap-2 p-3 rounded-xl text-xs font-medium ${
+                    insight.type === 'warning'
+                      ? 'bg-amber-50 border border-amber-100 text-amber-800'
+                      : 'bg-emerald-50 border border-emerald-100 text-emerald-800'
+                  }`}>
+                    {insight.type === 'warning'
+                      ? <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                      : <CheckCircle size={14} className="shrink-0 mt-0.5" />}
+                    {insight.message}
+                  </div>
+                ))}
+              </div>
+            )}
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={trendData} barSize={12} margin={{ top: 0, right: 0, left: -22, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -311,18 +435,50 @@ export default function HistoryView({ patient: propPatient }) {
 
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
+  const [currentVideoSecs, setCurrentVideoSecs] = useState(0);
+  const [trendInsights, setTrendInsights] = useState([]);
+  const [notes, setNotes] = useState([]);
   const videoPlayerRef = useRef(null);
 
   useEffect(() => {
     if (!patient?.id) return;
-    fetch(`http://localhost:8000/history/${patient.id}`)
-      .then(res => res.json())
-      .then(data => {
-        setSessions(data);
-        if (data.length > 0) setSelectedSession(data[0]);
-      })
-      .catch(err => console.error('Failed to load history:', err));
+    Promise.all([
+      fetch(`http://localhost:8000/history/${patient.id}`).then(r => r.json()),
+      fetch(`http://localhost:8000/trends/${patient.id}`).then(r => r.json()),
+    ]).then(([historyData, trendsData]) => {
+      setSessions(historyData);
+      if (historyData.length > 0) setSelectedSession(historyData[0]);
+      setTrendInsights(trendsData.insights || []);
+    }).catch(err => console.error('Failed to load patient data:', err));
   }, [patient?.id]);
+
+  useEffect(() => {
+    if (!selectedSession?.id) { setNotes([]); return; }
+    fetch(`http://localhost:8000/sessions/${selectedSession.id}/notes`)
+      .then(r => r.json())
+      .then(setNotes)
+      .catch(() => setNotes([]));
+    setCurrentVideoSecs(0);
+  }, [selectedSession?.id]);
+
+  const handleAddNote = (noteText) => {
+    if (!selectedSession?.id) return;
+    const timestamp_str = formatTime(currentVideoSecs);
+    fetch(`http://localhost:8000/sessions/${selectedSession.id}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seconds: Math.floor(currentVideoSecs), timestamp_str, note_text: noteText }),
+    })
+      .then(r => r.json())
+      .then(note => setNotes(prev => [...prev, note].sort((a, b) => a.seconds - b.seconds)))
+      .catch(() => {});
+  };
+
+  const handleDeleteNote = (noteId) => {
+    fetch(`http://localhost:8000/notes/${noteId}`, { method: 'DELETE' })
+      .then(() => setNotes(prev => prev.filter(n => n.id !== noteId)))
+      .catch(() => {});
+  };
 
   const seekTo = (timeStr) => {
     if (!videoPlayerRef.current || !timeStr) return;
@@ -352,9 +508,26 @@ export default function HistoryView({ patient: propPatient }) {
         <button onClick={() => navigate('/')} className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 font-medium transition-colors text-sm">
           <ArrowLeft size={16} /> Back to Patients
         </button>
-        <div className="text-right">
-          <h2 className="text-lg font-bold text-slate-800">{patient.name}'s Records</h2>
-          <p className="text-[11px] text-slate-400 font-mono">ID: {patient.external_id}</p>
+        <div className="flex items-center gap-3">
+          {selectedSession && (
+            <button
+              onClick={async () => {
+                const res = await fetch(`http://localhost:8000/report/${selectedSession.id}`);
+                const html = await res.text();
+                const blob = new Blob([html], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm"
+            >
+              <FileText size={13} /> Generate Report
+            </button>
+          )}
+          <div className="text-right">
+            <h2 className="text-lg font-bold text-slate-800">{patient.name}'s Records</h2>
+            <p className="text-[11px] text-slate-400 font-mono">ID: {patient.external_id}</p>
+          </div>
         </div>
       </div>
 
@@ -369,7 +542,7 @@ export default function HistoryView({ patient: propPatient }) {
         {/* Col 2 — Video + metadata */}
         <div className="col-span-5 min-h-0">
           {selectedSession ? (
-            <VideoPanel session={selectedSession} videoRef={videoPlayerRef} />
+            <VideoPanel session={selectedSession} videoRef={videoPlayerRef} onTimeUpdate={setCurrentVideoSecs} />
           ) : (
             <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl text-slate-300 text-center p-10">
               <Film size={36} className="mb-3 opacity-20" />
@@ -381,7 +554,16 @@ export default function HistoryView({ patient: propPatient }) {
         {/* Col 3 — Analysis */}
         <div className="col-span-5 min-h-0">
           {selectedSession ? (
-            <AnalysisPanel session={selectedSession} sessions={sessions} onSeek={seekTo} />
+            <AnalysisPanel
+              session={selectedSession}
+              sessions={sessions}
+              onSeek={seekTo}
+              currentVideoSecs={currentVideoSecs}
+              trendInsights={trendInsights}
+              notes={notes}
+              onAddNote={handleAddNote}
+              onDeleteNote={handleDeleteNote}
+            />
           ) : (
             <div className="h-full flex items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl text-slate-300">
               <BarChart3 size={36} className="opacity-20" />

@@ -40,6 +40,7 @@ class SessionRecord(Base):
 
     patient = relationship("Patient", back_populates="sessions")
     timeline = relationship("TimelineEntry", back_populates="session", cascade="all, delete")
+    notes = relationship("Note", back_populates="session", cascade="all, delete")
 
 class TimelineEntry(Base):
     __tablename__ = "timeline_entries"
@@ -51,6 +52,19 @@ class TimelineEntry(Base):
     confidence = Column(Float)
 
     session = relationship("SessionRecord", back_populates="timeline")
+
+
+class Note(Base):
+    __tablename__ = "notes"
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"))
+    seconds = Column(Integer, default=0)
+    timestamp_str = Column(String(20), default="00:00")
+    note_text = Column(Text)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    session = relationship("SessionRecord", back_populates="notes")
+
 
 # Helper to create tables if they don't exist
 def init_db():

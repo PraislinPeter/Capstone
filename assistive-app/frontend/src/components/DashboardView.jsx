@@ -1,17 +1,18 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
-import { 
-  Clock, 
-  Circle, 
-  TrendingUp, 
-  Activity, 
-  Video, 
+import {
+  Clock,
+  Circle,
+  TrendingUp,
+  Activity,
+  Video,
   AlertCircle,
   ArrowLeft,
   Wifi,
   WifiOff,
   Sun,
-  Moon
+  Moon,
+  Plus,
 } from 'lucide-react';
 
 // --- Utility: Emotion Styling ---
@@ -97,7 +98,9 @@ export default function DashboardView() {
   const [frameQuality, setFrameQuality] = useState('good');
   const [qualityDetails, setQualityDetails] = useState(null);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [emotionHistory, setEmotionHistory] = useState([]); // Last N emotions for trend strip
+  const [emotionHistory, setEmotionHistory] = useState([]);
+  const [liveSessionId, setLiveSessionId] = useState(null);
+  const [noteText, setNoteText] = useState('');
 
   const [currentMetrics, setCurrentMetrics] = useState({
     emotion: "Ready",
@@ -163,6 +166,11 @@ export default function DashboardView() {
         pendingRef.current = Math.max(0, pendingRef.current - 1);
         setIsBuffering(pendingRef.current > 2);
         const response = JSON.parse(event.data);
+
+        if (response.status === "session_started") {
+          setLiveSessionId(response.session_db_id);
+          return;
+        }
 
         if (response.status === "finished") {
           stopCleanup();
@@ -267,9 +275,22 @@ export default function DashboardView() {
     }
   };
 
+  const handleAddLiveNote = () => {
+    if (!noteText.trim() || !liveSessionId) return;
+    const [m, s] = sessionTime.split(':').map(Number);
+    const seconds = m * 60 + (s || 0);
+    fetch(`http://localhost:8000/sessions/${liveSessionId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seconds, timestamp_str: sessionTime, note_text: noteText.trim() }),
+    }).catch(() => {});
+    setNoteText('');
+  };
+
   const stopCleanup = () => {
     setIsRecording(false);
     setIsConnected(false);
+    setLiveSessionId(null);
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
@@ -510,6 +531,30 @@ export default function DashboardView() {
             })}
             <div ref={timelineEndRef} />
           </div>
+
+          {/* Live note input — only visible during active session */}
+          {isRecording && liveSessionId && (
+            <div className="shrink-0 pt-3 mt-2 border-t border-slate-100">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                Note at {sessionTime}
+              </p>
+              <textarea
+                value={noteText}
+                onChange={e => setNoteText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAddLiveNote(); }}
+                placeholder="Clinical observation..."
+                rows={2}
+                className="w-full text-xs p-2 rounded-lg border border-slate-200 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              />
+              <button
+                onClick={handleAddLiveNote}
+                disabled={!noteText.trim()}
+                className="mt-1.5 w-full flex items-center justify-center gap-1.5 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-lg disabled:opacity-40 hover:bg-indigo-700 transition-colors"
+              >
+                <Plus size={11} /> Add at {sessionTime}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
