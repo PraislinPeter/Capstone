@@ -1,3 +1,21 @@
+"""
+SETUP INSTRUCTIONS FOR RASPBERRY PI:
+------------------------------------
+Depending on your Pi Operating system, follow one of the methods below.
+
+Method 1: Older OS (Bullseye / Buster)
+   sudo apt-get update
+   sudo apt-get install python3-opencv
+   pip3 install websockets
+
+Method 2: Newer OS (Bookworm and above using PEP 668)
+   sudo apt-get update
+   sudo apt-get install python3-opencv
+   python3 -m venv picam_env
+   source picam_env/bin/activate
+   pip install websockets
+"""
+
 # pylint: disable=no-member
 import cv2
 import base64
