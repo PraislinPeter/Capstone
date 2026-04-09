@@ -8,12 +8,9 @@ import {
   Video,
   AlertCircle,
   ArrowLeft,
-  Wifi,
-  WifiOff,
-  Sun,
-  Moon,
   Plus,
 } from 'lucide-react';
+import GameMetricsPanel from './GameMetricsPanel';
 
 // --- Utility: Emotion Styling ---
 const EMOTION_MAP = {
@@ -28,83 +25,28 @@ const EMOTION_MAP = {
 
 const getEmotionStyle = (emo) => EMOTION_MAP[emo?.toLowerCase()] || EMOTION_MAP.neutral;
 
-// ╔══════════════════════════════════════════════════════════════════════╗
-// ║  CHANGE 1: IMAGE QUALITY ANALYZER                                    ║
-// ║  Checks brightness/contrast of each frame before sending.            ║
-// ║  Warns the user if lighting is bad (which kills accuracy).           ║
-// ╚══════════════════════════════════════════════════════════════════════╝
-function analyzeFrameQuality(canvas) {
-  const ctx = canvas.getContext('2d');
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-  
-  let totalBrightness = 0;
-  let pixelCount = 0;
-  const brightnessValues = [];
-
-  // Sample every 16th pixel for speed
-  for (let i = 0; i < data.length; i += 64) { // 4 channels * 16 skip
-    const r = data[i], g = data[i + 1], b = data[i + 2];
-    const brightness = (0.299 * r + 0.587 * g + 0.114 * b); // Perceived luminance
-    totalBrightness += brightness;
-    brightnessValues.push(brightness);
-    pixelCount++;
-  }
-
-  const avgBrightness = totalBrightness / pixelCount;
-
-  // Contrast: standard deviation of brightness
-  const variance = brightnessValues.reduce((sum, val) => sum + (val - avgBrightness) ** 2, 0) / pixelCount;
-  const contrast = Math.sqrt(variance);
-
-  return {
-    brightness: avgBrightness,       // 0-255, ideal: 80-180
-    contrast,                        // 0-128, ideal: > 40
-    isTooLight: avgBrightness > 200,
-    isTooDark: avgBrightness < 50,
-    isLowContrast: contrast < 30,
-    quality: avgBrightness > 50 && avgBrightness < 200 && contrast > 30 ? 'good' : 'poor'
-  };
-}
-
 export default function DashboardView() {
-  // --- Router ---
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
   const patient = location.state?.patient || { id, name: "Unknown Patient", external_id: "N/A" };
 
-  // --- Refs ---
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const ws = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const intervalRef = useRef(null);
   const timelineEndRef = useRef(null);
-  const streamRef = useRef(null);
+  const pollRef = useRef(null);
+  const sessionUuidRef = useRef(null);
 
-  // ╔════════════════════════════════════════════════════════════════════╗
-  // ║  CHANGE 2: SEND QUEUE + BACKPRESSURE                              ║
-  // ║  If the WebSocket can't keep up (slow network), we drop frames     ║
-  // ║  instead of queueing stale data. Stale frames = wrong emotions.    ║
-  // ╚════════════════════════════════════════════════════════════════════╝
-  const pendingRef = useRef(0); // Track how many messages are in-flight
-
-  // --- State ---
   const [isRecording, setIsRecording] = useState(false);
   const [sessionTime, setSessionTime] = useState("00:00");
   const [timeline, setTimeline] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [frameQuality, setFrameQuality] = useState('good');
-  const [qualityDetails, setQualityDetails] = useState(null);
-  const [isBuffering, setIsBuffering] = useState(false);
   const [emotionHistory, setEmotionHistory] = useState([]);
-  const [liveSessionId, setLiveSessionId] = useState(null);
+  const [liveSessionDbId, setLiveSessionDbId] = useState(null);
   const [noteText, setNoteText] = useState('');
 
   const [currentMetrics, setCurrentMetrics] = useState({
     emotion: "Ready",
     scores: { happy: 0, neutral: 0, sad: 0, angry: 0, fear: 0, surprise: 0, disgust: 0 },
+    confidence: 0,
   });
 
   // Auto-scroll timeline
@@ -117,169 +59,124 @@ export default function DashboardView() {
     return () => stopCleanup();
   }, []);
 
-  // ╔════════════════════════════════════════════════════════════════════╗
-  // ║  CHANGE 3: HIGHER-RES CAPTURE + CAMERA CONSTRAINTS                ║
-  // ║  We capture at native resolution and downscale on the canvas.      ║
-  // ║  Also request specific camera settings for better face detection.  ║
-  // ╚════════════════════════════════════════════════════════════════════╝
-  const startSession = async () => {
-    setTimeline([]);
-    setEmotionHistory([]);
-    setFrameQuality('good');
-    setQualityDetails(null);
-    setIsBuffering(false);
+  const pollLiveState = async () => {
+    if (!sessionUuidRef.current) return;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          width: { ideal: 1280 },       // Capture higher, downscale for sending
-          height: { ideal: 720 },
-          frameRate: { ideal: 15 },      // Don't need 30fps for emotion detection
-          facingMode: 'user',
-          // These are hints — browsers may ignore them, but when supported they help
-          ...(navigator.mediaDevices.getSupportedConstraints?.().autoGainControl && {
-            autoGainControl: true
-          }),
-        }, 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,        // Cleaner audio → better audio emotion
-          autoGainControl: true,
-          sampleRate: { ideal: 16000 },  // Match backend's expected rate
-        }
+      const res = await fetch(`http://127.0.0.1:8000/sessions/${sessionUuidRef.current}/live`);
+      const data = await res.json();
+
+      if (!res.ok) return;
+
+      if (data.status === "finished") {
+        setSessionTime(data.timestamp || "00:00");
+        setIsConnected(false);
+        setIsRecording(false);
+        return;
+      }
+
+      setIsConnected(data.status === "processing");
+      setSessionTime(data.timestamp || "00:00");
+
+      const scores = {
+        happy: 0, neutral: 0, sad: 0, angry: 0, fear: 0, surprise: 0, disgust: 0,
+        ...(data.scores || {}),
+      };
+      const confidence = scores[data.emotion] ?? 0;
+
+      setCurrentMetrics({
+        emotion: data.emotion || "neutral",
+        scores,
+        confidence,
       });
 
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
-
-      ws.current = new WebSocket(`ws://localhost:8000/ws/stream/${patient.id}`);
-
-      ws.current.onopen = () => {
-        setIsConnected(true);
-        pendingRef.current = 0;
-        startMediaProcessing(stream);
-      };
-
-      ws.current.onclose = () => setIsConnected(false);
-
-      ws.current.onmessage = (event) => {
-        pendingRef.current = Math.max(0, pendingRef.current - 1);
-        setIsBuffering(pendingRef.current > 2);
-        const response = JSON.parse(event.data);
-
-        if (response.status === "session_started") {
-          setLiveSessionId(response.session_db_id);
-          return;
-        }
-
-        if (response.status === "finished") {
-          stopCleanup();
-          return;
-        }
-
-        setSessionTime(response.timestamp);
-
-        const scores = response.scores || {};
-        const confidence = scores[response.emotion] ?? 0;
-
-        setCurrentMetrics({ emotion: response.emotion, scores, confidence });
-
+      // Track recent emotion trend (last 12)
+      if (data.emotion && data.status === "processing") {
         setEmotionHistory(prev => {
-          const next = [...prev, response.emotion];
-          return next.slice(-12); // keep last 12 for the trend strip
+          const next = [...prev, data.emotion];
+          return next.slice(-12);
         });
+      }
 
-        setTimeline(prev => {
-          const lastEntry = prev[prev.length - 1];
-          if (!lastEntry || lastEntry.emotion !== response.emotion) {
-            return [...prev, { time: response.timestamp, emotion: response.emotion, confidence }];
+      if (data.emotion && data.timestamp && data.status === "processing") {
+        setTimeline((prev) => {
+          const last = prev[prev.length - 1];
+          if (!last || last.emotion !== data.emotion || last.time !== data.timestamp) {
+            return [...prev, { time: data.timestamp, emotion: data.emotion, confidence }];
           }
           return prev;
         });
-      };
-
-      setIsRecording(true);
+      }
     } catch (err) {
-      console.error(err);
-      alert("Camera/Mic access denied. Please allow permissions.");
+      console.error("[THERAPIST] Poll failed:", err);
+      setIsConnected(false);
     }
   };
 
-  const startMediaProcessing = (stream) => {
-    // ╔══════════════════════════════════════════════════════════════════╗
-    // ║  CHANGE 4: AUDIO CHUNK SIZE = 500ms                             ║
-    // ║  250ms chunks are too small for emotion classification.          ║
-    // ║  500ms gives the backend enough context per chunk while          ║
-    // ║  still being responsive. The backend accumulates 3s anyway.     ║
-    // ╚══════════════════════════════════════════════════════════════════╝
-    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-    mediaRecorderRef.current = mediaRecorder;
+  const startSession = async () => {
+    try {
+      setTimeline([]);
+      setEmotionHistory([]);
 
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0 && ws.current?.readyState === WebSocket.OPEN) {
-        const reader = new FileReader();
-        reader.readAsDataURL(e.data);
-        reader.onloadend = () => { 
-          ws.current.send(JSON.stringify({ audio: reader.result })); 
-        };
-      }
-    };
-    mediaRecorder.start(500); // Was 250ms — 500ms gives better audio chunks
+      const res = await fetch("http://127.0.0.1:8000/sessions/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patient_id: patient.id }),
+      });
 
-    // ╔══════════════════════════════════════════════════════════════════╗
-    // ║  CHANGE 5: ADAPTIVE FRAME SENDING WITH BACKPRESSURE             ║
-    // ║  - Send at ~5 FPS (200ms interval)                              ║
-    // ║  - Skip sending if >2 messages are pending (backpressure)       ║
-    // ║  - Check frame quality every 30 frames                          ║
-    // ║  - Send at higher JPEG quality (0.75 instead of 0.6) so the    ║
-    // ║    face detection model gets cleaner input                      ║
-    // ╚══════════════════════════════════════════════════════════════════╝
-    let frameCounter = 0;
+      const data = await res.json();
 
-    intervalRef.current = setInterval(() => {
-      if (ws.current?.readyState !== WebSocket.OPEN || !videoRef.current || !canvasRef.current) return;
-      
-      // BACKPRESSURE: If too many messages in flight, skip this frame.
-      // Sending stale/queued frames makes predictions lag behind reality.
-      if (pendingRef.current > 2) {
-        setIsBuffering(true);
+      if (!res.ok) {
+        alert(data.detail || "Failed to start session");
         return;
       }
-      setIsBuffering(false);
 
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      sessionUuidRef.current = data.session_uuid;
+      setLiveSessionDbId(data.session_id);
+      setIsRecording(true);
+      setIsConnected(true);
 
-      // Quality check every ~30 frames (~6 seconds)
-      frameCounter++;
-      if (frameCounter % 30 === 0) {
-        const quality = analyzeFrameQuality(canvas);
-        setFrameQuality(quality.quality);
-        setQualityDetails(quality);
-      }
+      await pollLiveState();
 
-      // Higher JPEG quality = better face features for the model
-      const imageSrc = canvas.toDataURL('image/jpeg', 0.75);
-      ws.current.send(JSON.stringify({ image: imageSrc }));
-      pendingRef.current++;
-
-    }, 200);
+      pollRef.current = setInterval(() => {
+        pollLiveState();
+      }, 1000);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to connect to child session");
+    }
   };
 
-  const stopSession = () => {
-    if (ws.current?.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({ event: "stop" }));
-    } else {
-      stopCleanup();
+  const stopSession = async () => {
+    try {
+      if (sessionUuidRef.current) {
+        await fetch(`http://127.0.0.1:8000/sessions/${sessionUuidRef.current}/end`, {
+          method: "POST",
+        });
+      }
+    } catch (err) {
+      console.error("[THERAPIST] Failed to end session:", err);
+    }
+
+    stopCleanup();
+  };
+
+  const stopCleanup = () => {
+    setIsRecording(false);
+    setIsConnected(false);
+    setLiveSessionDbId(null);
+
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
   };
 
   const handleAddLiveNote = () => {
-    if (!noteText.trim() || !liveSessionId) return;
+    if (!noteText.trim() || !liveSessionDbId) return;
     const [m, s] = sessionTime.split(':').map(Number);
     const seconds = m * 60 + (s || 0);
-    fetch(`http://localhost:8000/sessions/${liveSessionId}/notes`, {
+    fetch(`http://localhost:8000/sessions/${liveSessionDbId}/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ seconds, timestamp_str: sessionTime, note_text: noteText.trim() }),
@@ -287,37 +184,16 @@ export default function DashboardView() {
     setNoteText('');
   };
 
-  const stopCleanup = () => {
-    setIsRecording(false);
-    setIsConnected(false);
-    setLiveSessionId(null);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
-    
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) videoRef.current.srcObject = null;
-    
-    if (ws.current) {
-      ws.current.close();
-      ws.current = null;
-    }
-  };
-
   const emotionStyles = getEmotionStyle(currentMetrics.emotion);
   const hasSignal = isRecording && isConnected;
   const confidencePct = Math.round((currentMetrics.confidence ?? 0) * 100);
 
   return (
-    <div className="flex flex-col h-full space-y-6">
+    <div className="flex flex-col gap-5 pb-8">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <button 
-          onClick={() => navigate('/')} 
+        <button
+          onClick={() => navigate("/")}
           className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 font-medium transition-colors"
         >
           <ArrowLeft size={18} /> Back to Patient List
@@ -332,208 +208,182 @@ export default function DashboardView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
-        {/* ───── Metrics Column ───── */}
-        <div className="col-span-3 space-y-6 flex flex-col">
-          {/* Timer */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <Clock size={14} className="text-indigo-500" /> Elapsed Time
-            </h3>
-            <div className="flex items-center justify-between">
-              <span className="text-3xl font-black text-slate-800 tabular-nums">{sessionTime}</span>
-              <div className={`flex items-center gap-2 px-2 py-1 rounded-md text-[10px] font-black uppercase ${
-                hasSignal 
-                  ? 'bg-rose-50 text-rose-600 border border-rose-100 animate-pulse' 
-                  : 'bg-slate-100 text-slate-500 border border-slate-200'
-              }`}>
-                <Circle size={8} fill="currentColor" /> {hasSignal ? 'Live' : 'Ready'}
-              </div>
-            </div>
-          </div>
-
-          {/* Dominant Affect + Scores */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex-1 flex flex-col min-h-0">
-            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-              <TrendingUp size={14} className="text-indigo-500" /> Dominant Affect
-            </h3>
-            
-            <div className={`mb-4 p-6 rounded-2xl text-center border transition-all duration-500 shadow-sm ${emotionStyles.bg} ${emotionStyles.border}`}>
-              <h4 className={`text-4xl font-black capitalize ${emotionStyles.text}`}>
-                {currentMetrics.emotion}
-              </h4>
-              {hasSignal && (
-                <p className={`text-xs font-bold mt-2 opacity-60 ${emotionStyles.text}`}>
-                  {confidencePct}% confidence
-                </p>
-              )}
-            </div>
-
-            {/* Emotion trend strip — last 12 detections */}
-            {emotionHistory.length > 0 && (
-              <div className="mb-4">
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recent trend</p>
-                <div className="flex gap-1 flex-wrap">
-                  {emotionHistory.map((emo, i) => (
-                    <div
-                      key={i}
-                      title={emo}
-                      className={`w-5 h-5 rounded-full transition-all duration-300 ${getEmotionStyle(emo).color}`}
-                      style={{ opacity: 0.4 + (i / emotionHistory.length) * 0.6 }}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-              {Object.entries(currentMetrics.scores)
-                .sort((a, b) => b[1] - a[1])
-                .map(([emo, score]) => (
-                  <div key={emo}>
-                    <div className="flex justify-between text-[10px] font-bold mb-1.5 capitalize text-slate-500">
-                      <span>{emo}</span>
-                      <span>{(score * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full transition-all duration-700 ease-out ${getEmotionStyle(emo).color}`} 
-                        style={{ width: `${score * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
+      {/* Top Row: Timer + Dominant Affect + Emotion Breakdown */}
+      <div className="grid grid-cols-12 gap-4">
+        {/* Timer */}
+        <div className="col-span-3 bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+            <Clock size={12} className="text-indigo-500" /> Elapsed Time
+          </h3>
+          <div className="flex items-center justify-between">
+            <span className="text-2xl font-black text-slate-800 tabular-nums">{sessionTime}</span>
+            <div
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[9px] font-black uppercase ${
+                hasSignal
+                  ? "bg-rose-50 text-rose-600 border border-rose-100 animate-pulse"
+                  : "bg-slate-100 text-slate-500 border border-slate-200"
+              }`}
+            >
+              <Circle size={7} fill="currentColor" /> {hasSignal ? "Live" : "Ready"}
             </div>
           </div>
         </div>
 
-        {/* ───── Video Column ───── */}
-        <div className="col-span-6 flex flex-col gap-6">
-          <div className="bg-slate-900 rounded-3xl border-4 border-white shadow-2xl overflow-hidden flex flex-col relative aspect-video group">
-            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-            <canvas ref={canvasRef} width="640" height="480" className="hidden" />
-            
-            {/* ╔════════════════════════════════════════════════════════════╗
-                ║  CHANGE 6: LIGHTING QUALITY INDICATOR                      ║
-                ║  Shows a warning overlay when frame quality is poor.       ║
-                ║  Bad lighting is the #1 cause of wrong predictions.        ║
-                ╚════════════════════════════════════════════════════════════╝ */}
-            {isRecording && frameQuality === 'poor' && (
-              <div className="absolute top-4 left-4 right-4 bg-amber-500/90 backdrop-blur-sm text-white text-xs font-bold px-4 py-3 rounded-xl flex items-center gap-3 z-10 shadow-lg">
-                {qualityDetails?.isTooDark ? <Moon size={16} /> : <Sun size={16} />}
-                <div>
-                  <p className="text-sm">
-                    {qualityDetails?.isTooDark && "Low light detected — accuracy reduced"}
-                    {qualityDetails?.isTooLight && "Overexposed — move away from light source"}
-                    {qualityDetails?.isLowContrast && !qualityDetails?.isTooDark && !qualityDetails?.isTooLight && "Low contrast — adjust lighting"}
-                  </p>
-                  <p className="opacity-70 mt-0.5">Improve lighting for better emotion detection</p>
-                </div>
-              </div>
+        {/* Dominant Affect with confidence */}
+        <div className="col-span-3 bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+            <TrendingUp size={12} className="text-indigo-500" /> Dominant Affect
+          </h3>
+          <div className={`p-3 rounded-xl text-center border transition-all ${emotionStyles.bg} ${emotionStyles.border}`}>
+            <h4 className={`text-xl font-black capitalize ${emotionStyles.text}`}>
+              {currentMetrics.emotion}
+            </h4>
+            {hasSignal && (
+              <p className={`text-[10px] font-bold mt-1 opacity-60 ${emotionStyles.text}`}>
+                {confidencePct}% confidence
+              </p>
             )}
+          </div>
+        </div>
 
-            {!isRecording ? (
-              <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md flex flex-col items-center justify-center text-white p-12 text-center">
-                <div className="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-indigo-500/50">
-                  <Video size={40} />
+        {/* Emotion Breakdown */}
+        <div className="col-span-6 bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+            <Activity size={12} className="text-indigo-500" /> Emotion Breakdown
+          </h3>
+          <div className="grid grid-cols-3 gap-x-4 gap-y-1.5">
+            {Object.entries(currentMetrics.scores)
+              .sort((a, b) => b[1] - a[1])
+              .map(([emo, score]) => (
+                <div key={emo}>
+                  <div className="flex justify-between text-[9px] font-bold mb-0.5 capitalize text-slate-500">
+                    <span>{emo}</span>
+                    <span>{(score * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-700 ease-out ${getEmotionStyle(emo).color}`}
+                      style={{ width: `${score * 100}%` }}
+                    />
+                  </div>
                 </div>
-                <h2 className="text-2xl font-bold mb-2">Ready to Start Session?</h2>
-                <p className="text-slate-400 text-sm mb-8 max-w-xs">
-                  Analysis will begin immediately. Video and audio are encrypted.
+              ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Emotion trend strip */}
+      {emotionHistory.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm">
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recent emotion trend</p>
+          <div className="flex gap-1 flex-wrap">
+            {emotionHistory.map((emo, i) => (
+              <div
+                key={i}
+                title={emo}
+                className={`w-5 h-5 rounded-full transition-all duration-300 ${getEmotionStyle(emo).color}`}
+                style={{ opacity: 0.4 + (i / emotionHistory.length) * 0.6 }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Main row: Viewer + Timeline */}
+      <div className="grid grid-cols-12 gap-4">
+        {/* Viewer */}
+        <div className="col-span-8 flex flex-col gap-3">
+          <div
+            className="bg-slate-900 rounded-2xl border-2 border-slate-700 shadow-xl overflow-hidden relative"
+            style={{ aspectRatio: "16/9" }}
+          >
+            {!isRecording ? (
+              <div className="absolute inset-0 bg-slate-900/85 backdrop-blur-md flex flex-col items-center justify-center text-white text-center p-8">
+                <div className="w-14 h-14 bg-indigo-600 rounded-full flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/40">
+                  <Video size={28} />
+                </div>
+                <h2 className="text-lg font-bold mb-1">Child Emotion Analysis</h2>
+                <p className="text-slate-400 text-xs mb-2 max-w-sm">
+                  Connected to the child-side camera pipeline. Live emotion results are displayed here.
                 </p>
-                <button 
-                  onClick={startSession} 
-                  className="bg-white text-indigo-600 hover:bg-indigo-50 font-black px-10 py-4 rounded-2xl transition-all active:scale-95 shadow-xl"
+                <p className="text-slate-500 text-[10px] mb-5 max-w-xs">
+                  This dashboard is a viewer. The child device is the source.
+                </p>
+                <button
+                  onClick={startSession}
+                  className="bg-white text-indigo-600 hover:bg-indigo-50 font-black px-8 py-3 rounded-xl transition-all active:scale-95 shadow-lg text-sm"
                 >
-                  START CLINICAL ANALYSIS
+                  START EMOTION ANALYSIS
                 </button>
               </div>
             ) : (
-              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 transition-opacity">
-                <button 
-                  onClick={stopSession} 
-                  className="bg-rose-600 hover:bg-rose-700 text-white font-black px-12 py-4 rounded-2xl shadow-2xl flex items-center gap-3 active:scale-95 transition-all"
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-center p-8">
+                <div className="text-6xl mb-4">📡</div>
+                <h3 className="text-xl font-bold mb-2">Live Child Session Connected</h3>
+                <p className="text-slate-300 text-sm mb-6">
+                  Receiving live emotion updates from child device.
+                </p>
+                <button
+                  onClick={stopSession}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-black px-8 py-3 rounded-xl shadow-lg flex items-center gap-2 active:scale-95 text-sm"
                 >
-                  <div className="w-3 h-3 bg-white rounded-full animate-pulse" /> END SESSION
+                  <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse" /> END SESSION
                 </button>
               </div>
             )}
           </div>
 
-          {/* Status Bar */}
-          <div className="bg-indigo-900 text-indigo-100 p-4 rounded-2xl flex items-center gap-4 border border-indigo-800/50">
-            <div className={`p-2 rounded-lg ${hasSignal ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}`}>
-              <Activity size={20} />
+          {/* Status bar */}
+          <div className="bg-indigo-900 text-indigo-100 p-3 rounded-xl flex items-center gap-3 border border-indigo-800/50">
+            <div className={`p-1.5 rounded-lg ${hasSignal ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-500/20 text-slate-400"}`}>
+              <Activity size={16} />
             </div>
-            <div className="flex-1">
-              <p className="text-xs font-bold uppercase tracking-wider opacity-60">Neural Engine Status</p>
-              <p className="text-sm font-medium">
-                {hasSignal ? "Live Stream Optimized" : "Offline"} 
-                <span className="mx-2 opacity-30">|</span> 
-                {hasSignal ? "Acoustic & Visual Fusion Active" : "Waiting..."}
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-wider opacity-60">Child Emotion Engine</p>
+              <p className="text-xs font-medium">
+                {hasSignal ? "Receiving Live Child Emotion Data" : "Waiting for Connection"}
+                <span className="mx-1.5 opacity-30">|</span>
+                {hasSignal ? "Viewer Mode Active" : "Start session to begin"}
               </p>
             </div>
-            {/* ╔════════════════════════════════════════════════════╗
-                ║  CHANGE 7: SIGNAL QUALITY INDICATORS               ║
-                ║  Visual feedback for connection + frame quality     ║
-                ╚════════════════════════════════════════════════════╝ */}
-            {hasSignal && (
-              <div className="flex items-center gap-3">
-                <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${
-                  frameQuality === 'good' 
-                    ? 'bg-emerald-500/20 text-emerald-300' 
-                    : 'bg-amber-500/20 text-amber-300'
-                }`}>
-                  {frameQuality === 'good' ? <Wifi size={12} /> : <WifiOff size={12} />}
-                  {frameQuality === 'good' ? 'Clear' : 'Noisy'}
-                </div>
-                <div className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${
-                  isBuffering
-                    ? 'bg-amber-500/20 text-amber-300'
-                    : 'bg-emerald-500/20 text-emerald-300'
-                }`}>
-                  {isBuffering ? 'Buffering' : 'Realtime'}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* ───── Timeline Column ───── */}
-        <div className="col-span-3 flex flex-col h-full bg-white rounded-2xl border border-slate-200 p-5 shadow-sm min-h-0">
-          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2 shrink-0">
-            <Activity size={14} className="text-indigo-500" /> Chronological Log
+        {/* Timeline + Live notes */}
+        <div className="col-span-4 bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col" style={{ maxHeight: 480 }}>
+          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 shrink-0">
+            <Activity size={12} className="text-indigo-500" /> Chronological Log
           </h3>
-          <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
             {timeline.length === 0 && (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2 opacity-40">
-                <AlertCircle size={32} />
-                <p className="text-xs font-bold">No events logged yet</p>
+              <div className="h-full flex flex-col items-center justify-center text-center p-4 opacity-40">
+                <AlertCircle size={24} />
+                <p className="text-[10px] font-bold mt-2">No events logged yet</p>
               </div>
             )}
             {timeline.map((entry, i) => {
-              const style = getEmotionStyle(entry.emotion);
+              const st = getEmotionStyle(entry.emotion);
               return (
-                <div key={i} className={`p-3 rounded-xl border-l-4 transition-all ${style.bg} ${style.border} border-l-current`}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-[9px] font-black font-mono text-slate-400 uppercase">
+                <div key={i} className={`p-2.5 rounded-lg border-l-4 ${st.bg} ${st.border}`}>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[8px] font-black font-mono text-slate-400 uppercase">
                       {entry.time}
                     </span>
                     {entry.confidence != null && (
-                      <span className={`text-[9px] font-bold ${style.text} opacity-60`}>
+                      <span className={`text-[8px] font-bold ${st.text} opacity-60`}>
                         {Math.round(entry.confidence * 100)}%
                       </span>
                     )}
                   </div>
-                  <p className={`text-sm font-bold capitalize ${style.text}`}>{entry.emotion}</p>
+                  <p className={`text-xs font-bold capitalize ${st.text}`}>{entry.emotion}</p>
                 </div>
               );
             })}
             <div ref={timelineEndRef} />
           </div>
 
-          {/* Live note input — only visible during active session */}
-          {isRecording && liveSessionId && (
+          {/* Live note input */}
+          {isRecording && liveSessionDbId && (
             <div className="shrink-0 pt-3 mt-2 border-t border-slate-100">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
                 Note at {sessionTime}
@@ -557,6 +407,9 @@ export default function DashboardView() {
           )}
         </div>
       </div>
+
+      {/* Game Metrics Panel from Alisha */}
+      <GameMetricsPanel patientId={patient.id} isActive={isRecording} />
     </div>
   );
 }

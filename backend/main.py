@@ -1,9 +1,10 @@
-import asyncio
 import cv2
 import torch
 import base64
 import numpy as np
 import torch.nn.functional as F
+import uuid
+from typing import List, Optional
 import io
 import time
 import json
@@ -15,6 +16,7 @@ from datetime import datetime, date
 from pathlib import Path
 from PIL import Image
 from pydub import AudioSegment
+import html as html_module
 
 # --- FastAPI & Type Hinting Imports ---
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
@@ -22,34 +24,26 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import List
-import html as html_module
 
 # --- AI & ML Imports ---
-from transformers import AutoImageProcessor, AutoModelForImageClassification, Wav2Vec2FeatureExtractor, AutoModelForAudioClassification
+from transformers import AutoImageProcessor, AutoModelForImageClassification, AutoFeatureExtractor, AutoModelForAudioClassification
 from insightface.app import FaceAnalysis
 
 # --- Database Imports ---
 from sqlalchemy.orm import Session, joinedload
-from database import SessionLocal, engine, Patient, SessionRecord, TimelineEntry, Note, Base, init_db
+from database import GameEvent, SessionLocal, engine, Patient, SessionRecord, TimelineEntry, Note, Base, init_db
 
 # ------------------- CONFIGURATION -------------------
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-EMOTION_MODEL = "trpakov/vit-face-expression"
-AUDIO_MODEL = "ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition"
+EMOTION_MODEL = "dima806/facial_emotions_image_detection"
+AUDIO_MODEL = "superb/hubert-large-superb-er"
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 app = FastAPI()
-
-@app.on_event("startup")
-def on_startup():
-    init_db()
-    print("✅ API started (models load on first emotion detection)")
-
-# Fixed: Only one CORS middleware
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -57,105 +51,49 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
-# ------------------- MODEL LOADING (LAZY - ONLY ON FIRST USE) -------------------
-processor = None
-video_model = None
-vid_id2label = None
-face_app = None
-audio_extractor = None
-audio_model = None
-aud_id2label = None
-SILERO_VAD_MODEL = None
-get_speech_timestamps = None
-USE_SILERO_VAD = False
-models_loaded = False
+# --- Create database tables on startup ---
+init_db()
+print("✅ Database tables ready")
+
+# ------------------- MODEL LOADING -------------------
+print(f"🚀 Loading Clinical Models on {DEVICE}...")
+
+processor = AutoImageProcessor.from_pretrained(EMOTION_MODEL)
+video_model = AutoModelForImageClassification.from_pretrained(EMOTION_MODEL).to(DEVICE).eval()
+vid_id2label = video_model.config.id2label
+
+face_app = FaceAnalysis(name="buffalo_l", providers=["CUDAExecutionProvider" if DEVICE == "cuda" else "CPUExecutionProvider"])
+face_app.prepare(ctx_id=0 if DEVICE == "cuda" else -1, det_size=(640, 640))
+
+audio_extractor = AutoFeatureExtractor.from_pretrained(AUDIO_MODEL)
+audio_model = AutoModelForAudioClassification.from_pretrained(AUDIO_MODEL).to(DEVICE).eval()
+aud_id2label = audio_model.config.id2label
 
 COMMON_EMOTIONS = ['neutral', 'happy', 'sad', 'angry', 'fear', 'surprise', 'disgust']
-
-def _load_models():
-    """Load all ML models ONLY on first emotion detection"""
-    global processor, video_model, vid_id2label, face_app
-    global audio_extractor, audio_model, aud_id2label
-    global SILERO_VAD_MODEL, get_speech_timestamps, USE_SILERO_VAD, models_loaded
-    
-    if models_loaded:
-        return  # Already loaded
-    
-    print(f"🚀 Loading Clinical Models on {DEVICE}...")
-    
-    # 1. Vision Model
-    processor = AutoImageProcessor.from_pretrained(EMOTION_MODEL)
-    video_model = AutoModelForImageClassification.from_pretrained(EMOTION_MODEL).to(DEVICE).eval()
-    vid_id2label = video_model.config.id2label
-    
-    # 2. Face Detection
-    face_app = FaceAnalysis(
-        name="buffalo_l",
-        providers=["CUDAExecutionProvider" if DEVICE == "cuda" else "CPUExecutionProvider"]
-    )
-    face_app.prepare(ctx_id=0 if DEVICE == "cuda" else -1, det_size=(640, 640))
-    
-    # 3. Audio Model
-    audio_extractor = Wav2Vec2FeatureExtractor.from_pretrained("facebook/wav2vec2-large-xlsr-53")
-    audio_model = AutoModelForAudioClassification.from_pretrained(AUDIO_MODEL).to(DEVICE).eval()
-    aud_id2label = audio_model.config.id2label
-    
-    print(f"  ✅ Video labels: {vid_id2label}")
-    print(f"  ✅ Audio labels: {aud_id2label}")
-    
-    # 4. Optional: Silero VAD
-    try:
-        SILERO_VAD_MODEL, silero_utils = torch.hub.load(
-            repo_or_dir='snakers4/silero-vad', model='silero_vad',
-            force_reload=False, onnx=False
-        )
-        get_speech_timestamps = silero_utils[0]
-        USE_SILERO_VAD = True
-        print("  ✅ Silero VAD loaded.")
-    except Exception:
-        USE_SILERO_VAD = False
-        print("  ⚠️  Silero VAD not available, using RMS + spectral flatness fallback.")
-    
-    models_loaded = True
-    print("🚀 All models loaded!\n")
-
+LIVE_SESSION_STATE = {}
 
 # ------------------- PRODUCTION ENGINE CLASS -------------------
 
 class EmotionEngine:
     def __init__(self):
+        self.frame_window = 5
+        self.audio_window_sec = 3.0
         self.box_alpha = 0.7
-        self.ema_alpha = 0.3
-        self.ema_video_scores = None
-        self.ema_audio_scores = None
-        self.confidence_threshold = 0.35
+        self.audio_rms_threshold = 0.015
+
+        self.video_buffer = deque(maxlen=self.frame_window)
         self.audio_buffer_raw = np.array([], dtype=np.float32)
         self.last_bbox = None
+
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
-    # ── Preprocessing ──
-
     def enhance_image(self, image):
-        """CLAHE + gray-world white balance."""
-        image = self._white_balance(image)
         lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
         cl = self.clahe.apply(l)
-        return cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2BGR)
-
-    @staticmethod
-    def _white_balance(img):
-        result = img.copy().astype(np.float32)
-        avg_b = np.mean(result[:, :, 0])
-        avg_g = np.mean(result[:, :, 1])
-        avg_r = np.mean(result[:, :, 2])
-        avg_gray = (avg_b + avg_g + avg_r) / 3.0
-        if avg_b > 0: result[:, :, 0] *= avg_gray / avg_b
-        if avg_g > 0: result[:, :, 1] *= avg_gray / avg_g
-        if avg_r > 0: result[:, :, 2] *= avg_gray / avg_r
-        return np.clip(result, 0, 255).astype(np.uint8)
+        limg = cv2.merge((cl, a, b))
+        return cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
 
     def align_face(self, frame, landmarks):
         left_eye, right_eye = landmarks[0], landmarks[1]
@@ -169,31 +107,28 @@ class EmotionEngine:
 
     def get_central_face(self, faces, img_w, img_h):
         center_x, center_y = img_w // 2, img_h // 2
-        best_face, min_dist = None, float('inf')
+        best_face = None
+        min_dist = float('inf')
+
         for face in faces:
             x1, y1, x2, y2 = face.bbox
-            dist = math.hypot((x1 + x2) / 2 - center_x, (y1 + y2) / 2 - center_y)
+            face_cx = (x1 + x2) // 2
+            face_cy = (y1 + y2) // 2
+            dist = math.sqrt((face_cx - center_x)**2 + (face_cy - center_y)**2)
             if dist < min_dist:
                 min_dist = dist
                 best_face = face
         return best_face
 
-    # ── Video ──
-
     def process_video(self, frame):
-        # LAZY LOAD: Load models on first video frame
-        global video_model, processor, face_app, vid_id2label
-        if video_model is None:
-            _load_models()
-        
-        enhanced = self.enhance_image(frame)
+        enhanced_frame = self.enhance_image(frame)
 
-        faces = face_app.get(enhanced)
+        faces = face_app.get(enhanced_frame)
         if not faces:
             self.last_bbox = None
             return None
 
-        h, w = frame.shape[:2]
+        h, w, _ = frame.shape
         face = self.get_central_face(faces, w, h)
 
         curr_bbox = face.bbox
@@ -202,14 +137,15 @@ class EmotionEngine:
         self.last_bbox = curr_bbox
         x1, y1, x2, y2 = map(int, curr_bbox)
 
-        aligned = self.align_face(enhanced, face.kps)
+        aligned_frame = self.align_face(enhanced_frame, face.kps)
 
-        h_a, w_a = aligned.shape[:2]
+        h_a, w_a, _ = aligned_frame.shape
         pad_w = int((x2 - x1) * 0.25)
         pad_h = int((y2 - y1) * 0.25)
-        x1c, y1c = max(0, x1 - pad_w), max(0, y1 - pad_h)
-        x2c, y2c = min(w_a, x2 + pad_w), min(h_a, y2 + pad_h)
-        face_img = aligned[y1c:y2c, x1c:x2c]
+        x1, y1 = max(0, x1 - pad_w), max(0, y1 - pad_h)
+        x2, y2 = min(w_a, x2 + pad_w), min(h_a, y2 + pad_h)
+
+        face_img = aligned_frame[y1:y2, x1:x2]
         if face_img.size == 0:
             return None
 
@@ -224,77 +160,57 @@ class EmotionEngine:
         for i, p in enumerate(probs):
             label = vid_id2label[i].lower()
             val = float(p)
-            if 'happ' in label or 'joy' in label:        scores['happy'] += val
-            elif 'sad' in label:                           scores['sad'] += val
-            elif 'ang' in label:                           scores['angry'] += val
-            elif 'fear' in label:                          scores['fear'] += val
-            elif 'surp' in label:                          scores['surprise'] += val
-            elif 'disg' in label or 'contempt' in label:  scores['disgust'] += val
-            else:                                          scores['neutral'] += val
 
-        # EMA smoothing
-        if self.ema_video_scores is None:
-            self.ema_video_scores = dict(scores)
+            if 'happ' in label: scores['happy'] += val
+            elif 'sad' in label: scores['sad'] += val
+            elif 'ang' in label: scores['angry'] += val
+            elif 'fear' in label: scores['fear'] += val
+            elif 'surp' in label: scores['surprise'] += val
+            elif 'disg' in label: scores['disgust'] += val
+            else: scores['neutral'] += val
+
+        self.video_buffer.append(scores)
+
+        avg_scores = {k: 0.0 for k in COMMON_EMOTIONS}
+        current_buffer = list(self.video_buffer)
+
+        if len(current_buffer) < 3:
+            for s in current_buffer:
+                for k, v in s.items(): avg_scores[k] += v
         else:
-            for k in COMMON_EMOTIONS:
-                self.ema_video_scores[k] = (
-                    self.ema_alpha * scores[k]
-                    + (1 - self.ema_alpha) * self.ema_video_scores[k]
-                )
+            weights = np.linspace(0.5, 1.5, len(current_buffer))
+            weights /= weights.sum()
+            for idx, s in enumerate(current_buffer):
+                for k, v in s.items(): avg_scores[k] += (v * weights[idx])
 
-        total = sum(self.ema_video_scores.values())
-        if total > 0:
-            return {k: float(v) / total for k, v in self.ema_video_scores.items()}
-        return scores
-
-    # ── Audio ──
-
-    def _is_speech(self, chunk_16k: np.ndarray) -> bool:
-        if USE_SILERO_VAD:
-            tensor = torch.from_numpy(chunk_16k).float()
-            timestamps = get_speech_timestamps(tensor, SILERO_VAD_MODEL, sampling_rate=16000)
-            return len(timestamps) > 0
-        else:
-            rms = np.sqrt(np.mean(chunk_16k ** 2))
-            if rms < 0.02:
-                return False
-            spectrum = np.abs(np.fft.rfft(chunk_16k))
-            spectrum = spectrum + 1e-10
-            geo_mean = np.exp(np.mean(np.log(spectrum)))
-            arith_mean = np.mean(spectrum)
-            flatness = geo_mean / arith_mean
-            return flatness < 0.5
+        total = sum(avg_scores.values())
+        return {k: float(v)/total for k, v in avg_scores.items()} if total > 0 else scores
 
     def process_audio(self, raw_b64):
-        # LAZY LOAD: Load models on first audio chunk
-        global audio_model, audio_extractor, aud_id2label
-        if audio_model is None:
-            _load_models()
-        
         try:
             if "," in raw_b64:
                 raw_b64 = raw_b64.split(",")[-1]
-
             audio_data = base64.b64decode(raw_b64)
-            audio = AudioSegment.from_file(io.BytesIO(audio_data), format="webm")
+            audio_file = io.BytesIO(audio_data)
+            audio = AudioSegment.from_file(audio_file, format="webm")
             audio = audio.set_frame_rate(16000).set_channels(1)
-            chunk = np.array(audio.get_array_of_samples(), dtype=np.float32) / (2 ** 15)
 
-            if not self._is_speech(chunk):
+            chunk = np.array(audio.get_array_of_samples(), dtype=np.float32) / (2**15)
+
+            rms = np.sqrt(np.mean(chunk**2))
+            if rms < self.audio_rms_threshold:
                 return None
 
             self.audio_buffer_raw = np.concatenate((self.audio_buffer_raw, chunk))
+
             max_len = 16000 * 3
             if len(self.audio_buffer_raw) > max_len:
                 self.audio_buffer_raw = self.audio_buffer_raw[-max_len:]
+
             if len(self.audio_buffer_raw) < 16000:
                 return None
 
-            inputs = audio_extractor(
-                self.audio_buffer_raw, sampling_rate=16000,
-                return_tensors="pt", padding=True
-            ).to(DEVICE)
-
+            inputs = audio_extractor(self.audio_buffer_raw, sampling_rate=16000, return_tensors="pt", padding=True).to(DEVICE)
             with torch.no_grad():
                 logits = audio_model(**inputs).logits
                 probs = F.softmax(logits, dim=-1).cpu().numpy()[0]
@@ -303,78 +219,36 @@ class EmotionEngine:
             for i, p in enumerate(probs):
                 label = aud_id2label[i].lower()
                 val = float(p)
-                if 'ang' in label:                          scores['angry'] += val
-                elif 'calm' in label or 'neu' in label:     scores['neutral'] += val
-                elif 'disg' in label:                        scores['disgust'] += val
-                elif 'fear' in label:                        scores['fear'] += val
-                elif 'hap' in label:                         scores['happy'] += val
-                elif 'sad' in label:                         scores['sad'] += val
-                elif 'surp' in label:                        scores['surprise'] += val
-                else:                                        scores['neutral'] += val
 
-            if self.ema_audio_scores is None:
-                self.ema_audio_scores = dict(scores)
-            else:
-                for k in COMMON_EMOTIONS:
-                    self.ema_audio_scores[k] = (
-                        self.ema_alpha * scores[k]
-                        + (1 - self.ema_alpha) * self.ema_audio_scores[k]
-                    )
+                if 'neu' in label: scores['neutral'] += val
+                elif 'hap' in label: scores['happy'] += val
+                elif 'ang' in label: scores['angry'] += val
+                elif 'sad' in label: scores['sad'] += val
+                elif 'fear' in label: scores['fear'] += val
 
-            total = sum(self.ema_audio_scores.values())
-            if total > 0:
-                return {k: float(v) / total for k, v in self.ema_audio_scores.items()}
             return scores
-
-        except Exception as e:
-            print(f"⚠️  Audio processing error: {e}")
+        except:
             return None
 
-    # ── Fusion ──
-
-    @staticmethod
-    def _entropy(scores: dict) -> float:
-        return -sum(v * math.log(v + 1e-9) for v in scores.values())
-
     def fusion(self, v_scores, a_scores):
-        if not v_scores and not a_scores:
-            return "neutral", {k: (1.0 if k == 'neutral' else 0.0) for k in COMMON_EMOTIONS}
+        if not v_scores and not a_scores: return "neutral", {}
+        if not a_scores: return max(v_scores, key=v_scores.get), v_scores
+        if not v_scores: return max(a_scores, key=a_scores.get), a_scores
 
-        if not a_scores:
-            top = max(v_scores, key=v_scores.get)
-            if v_scores[top] < self.confidence_threshold:
-                top = "neutral"
-            return top, v_scores
+        final_scores = {k: 0.0 for k in COMMON_EMOTIONS}
 
-        if not v_scores:
-            top = max(a_scores, key=a_scores.get)
-            if a_scores[top] < self.confidence_threshold:
-                top = "neutral"
-            return top, a_scores
-
-        v_ent = self._entropy(v_scores)
-        a_ent = self._entropy(a_scores)
-
-        w_v = 1.0 / (v_ent + 1e-9)
-        w_a = 1.0 / (a_ent + 1e-9)
-        total_w = w_v + w_a
-        w_v /= total_w
-        w_a /= total_w
-
-        final_scores = {}
         for k in COMMON_EMOTIONS:
-            final_scores[k] = float(v_scores.get(k, 0)) * w_v + float(a_scores.get(k, 0)) * w_a
+            w_v, w_a = 0.6, 0.4
+            if k in ['angry', 'fear']:
+                w_a = 0.7
+                w_v = 0.3
+            val = (float(v_scores.get(k, 0)) * w_v) + (float(a_scores.get(k, 0)) * w_a)
+            final_scores[k] = val
 
         total = sum(final_scores.values())
         if total > 0:
-            final_scores = {k: v / total for k, v in final_scores.items()}
-
-        top_emotion = max(final_scores, key=final_scores.get)
-        if final_scores[top_emotion] < self.confidence_threshold:
-            top_emotion = "neutral"
-
-        return top_emotion, final_scores
-
+            final_scores = {k: float(v)/total for k, v in final_scores.items()}
+        return max(final_scores, key=final_scores.get), final_scores
 
 # ------------------- DB HELPERS -------------------
 def get_db():
@@ -384,36 +258,93 @@ def get_db():
     finally:
         db.close()
 
+def get_session_by_uuid(db: Session, session_uuid: str) -> Optional[SessionRecord]:
+    return db.query(SessionRecord).filter(SessionRecord.session_uuid == session_uuid).first()
 
-# ------------------- PATIENT ROUTES -------------------
+def format_duration_from_seconds(total_seconds: int) -> str:
+    return f"{total_seconds // 60:02}:{total_seconds % 60:02}"
 
+def ensure_active_session_for_patient(db: Session, patient_id: int) -> SessionRecord:
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    existing = (
+        db.query(SessionRecord)
+        .filter(
+            SessionRecord.patient_id == patient_id,
+            SessionRecord.status == "active"
+        )
+        .order_by(SessionRecord.started_at.desc(), SessionRecord.id.desc())
+        .first()
+    )
+    if existing:
+        return existing
+
+    new_session = SessionRecord(
+        patient_id=patient_id,
+        session_uuid=f"session_{uuid.uuid4().hex}",
+        status="active",
+        started_at=datetime.utcnow(),
+        date_recorded=datetime.utcnow(),
+        duration="00:00",
+        video_url=""
+    )
+    db.add(new_session)
+    db.commit()
+    db.refresh(new_session)
+    return new_session
+
+def get_live_session_payload(session_uuid: str):
+    state = LIVE_SESSION_STATE.get(session_uuid)
+    if not state:
+        return {
+            "status": "idle",
+            "session_uuid": session_uuid,
+            "timestamp": "00:00",
+            "emotion": "neutral",
+            "scores": {k: 0.0 for k in COMMON_EMOTIONS},
+            "updated_at": None,
+        }
+    return state
+
+# --- PATIENT ROUTES ---
 @app.get("/patients", response_model=List[dict])
 def list_patients(db: Session = Depends(get_db)):
     patients = db.query(Patient).all()
     results = []
     today = date.today()
+
     for p in patients:
         age = "N/A"
         if p.dob:
             age = today.year - p.dob.year - ((today.month, today.day) < (p.dob.month, p.dob.day))
+
         results.append({
-            "id": p.id, "name": p.name, "external_id": p.external_id,
-            "age": age, "gender": p.gender, "contact": p.contact_info
+            "id": p.id,
+            "name": p.name,
+            "external_id": p.external_id,
+            "age": age,
+            "gender": p.gender,
+            "contact": p.contact_info
         })
     return results
-
 
 @app.get("/patients/{patient_id}")
 def get_patient_details(patient_id: int, db: Session = Depends(get_db)):
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
-    return {
-        "id": patient.id, "name": patient.name, "external_id": patient.external_id,
-        "dob": patient.dob, "gender": patient.gender,
-        "contact_info": patient.contact_info, "medical_history": patient.medical_history
-    }
 
+    return {
+        "id": patient.id,
+        "name": patient.name,
+        "external_id": patient.external_id,
+        "dob": patient.dob,
+        "gender": patient.gender,
+        "contact_info": patient.contact_info,
+        "medical_history": patient.medical_history
+    }
 
 @app.put("/patients/{patient_id}")
 def update_patient(patient_id: int, patient_data: dict, db: Session = Depends(get_db)):
@@ -430,30 +361,40 @@ def update_patient(patient_id: int, patient_data: dict, db: Session = Depends(ge
     if patient_data.get('dob'):
         try:
             patient.dob = datetime.strptime(patient_data.get('dob'), "%Y-%m-%d").date()
-        except Exception:
+        except:
             pass
 
     try:
         db.commit()
         db.refresh(patient)
         return patient
-    except Exception:
+    except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail="Update failed. MRN may be duplicate.")
 
-
 @app.post("/patients")
 def register_patient(patient_data: dict, db: Session = Depends(get_db)):
+    ext_id = patient_data.get('external_id', '').strip() if patient_data.get('external_id') else None
+    if ext_id:
+        existing = db.query(Patient).filter(Patient.external_id == ext_id).first()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"MRN '{ext_id}' is already taken by patient '{existing.name}' (ID {existing.id})."
+            )
+
     dob_obj = None
     if patient_data.get('dob'):
         try:
             dob_obj = datetime.strptime(patient_data.get('dob'), "%Y-%m-%d").date()
-        except Exception:
+        except:
             pass
 
     new_patient = Patient(
-        name=patient_data.get('name'), external_id=patient_data.get('external_id'),
-        dob=dob_obj, gender=patient_data.get('gender'),
+        name=patient_data.get('name'),
+        external_id=ext_id,
+        dob=dob_obj,
+        gender=patient_data.get('gender'),
         contact_info=patient_data.get('contact_info'),
         medical_history=patient_data.get('medical_history')
     )
@@ -465,11 +406,90 @@ def register_patient(patient_data: dict, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         print(e)
+        if "Duplicate" in str(e) or "UNIQUE" in str(e):
+            raise HTTPException(status_code=409, detail=f"MRN '{ext_id}' is already taken.")
         raise HTTPException(status_code=400, detail="Registration failed.")
 
+# --- SESSION ROUTES ---
+@app.post("/sessions/start")
+def start_session(data: dict, db: Session = Depends(get_db)):
+    patient_id = data.get("patient_id")
+    if not patient_id:
+        raise HTTPException(status_code=400, detail="patient_id is required")
 
-# ------------------- HISTORY ROUTES -------------------
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
 
+    existing = (
+        db.query(SessionRecord)
+        .filter(
+            SessionRecord.patient_id == patient_id,
+            SessionRecord.status == "active"
+        )
+        .order_by(SessionRecord.started_at.desc(), SessionRecord.id.desc())
+        .first()
+    )
+
+    if existing:
+        print(f"[SESSION] Reusing existing session: {existing.session_uuid}")
+        return {
+            "status": "ok",
+            "session_id": existing.id,
+            "session_uuid": existing.session_uuid,
+            "patient_id": existing.patient_id,
+            "started_at": existing.started_at.isoformat() if existing.started_at else None
+        }
+
+    new_session = SessionRecord(
+        patient_id=patient_id,
+        session_uuid=f"session_{uuid.uuid4().hex}",
+        status="active",
+        started_at=datetime.utcnow(),
+        date_recorded=datetime.utcnow(),
+        duration="00:00",
+        video_url=""
+    )
+    db.add(new_session)
+    db.commit()
+    db.refresh(new_session)
+
+    print(f"[SESSION] Created new session: {new_session.session_uuid}")
+
+    return {
+        "status": "ok",
+        "session_id": new_session.id,
+        "session_uuid": new_session.session_uuid,
+        "patient_id": new_session.patient_id,
+        "started_at": new_session.started_at.isoformat() if new_session.started_at else None
+    }
+
+@app.post("/sessions/{session_uuid}/end")
+def end_session(session_uuid: str, db: Session = Depends(get_db)):
+    session = get_session_by_uuid(db, session_uuid)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.status != "completed":
+        ended_at = datetime.utcnow()
+        session.ended_at = ended_at
+        session.status = "completed"
+
+        start_dt = session.started_at or session.date_recorded or ended_at
+        duration_seconds = max(0, int((ended_at - start_dt).total_seconds()))
+        session.duration = format_duration_from_seconds(duration_seconds)
+
+        db.commit()
+        db.refresh(session)
+
+    return {
+        "status": "ok",
+        "session_id": session.id,
+        "session_uuid": session.session_uuid,
+        "duration": session.duration
+    }
+
+# --- HISTORY ROUTES ---
 @app.get("/history/{patient_id}")
 def get_patient_history(patient_id: int, db: Session = Depends(get_db)):
     sessions = (
@@ -479,15 +499,127 @@ def get_patient_history(patient_id: int, db: Session = Depends(get_db)):
         .order_by(SessionRecord.date_recorded.desc())
         .all()
     )
+
+    history_data = []
+    for s in sessions:
+        history_data.append({
+            "id": s.id,
+            "date": s.date_recorded.strftime("%Y-%m-%d %H:%M"),
+            "duration": s.duration,
+            "video_url": s.video_url,
+            "timeline": [{"time": t.timestamp_str, "emotion": t.emotion} for t in s.timeline]
+        })
+    return history_data
+
+# --- GAME EVENT ROUTES ---
+@app.post("/api/game-event")
+def log_game_event(data: dict, db: Session = Depends(get_db)):
+    session_uuid = data.get("session_uuid")
+    patient_id = data.get("patient_id")
+
+    session = None
+
+    if session_uuid:
+        session = get_session_by_uuid(db, session_uuid)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+    elif patient_id:
+        session = ensure_active_session_for_patient(db, patient_id)
+    else:
+        raise HTTPException(status_code=400, detail="session_uuid or patient_id is required")
+
+    item_id = data.get("scenario_id") or data.get("texture_id") or data.get("item_id") or data.get("event_type")
+    if not item_id:
+        raise HTTPException(status_code=400, detail="scenario_id, texture_id, item_id, or event_type is required")
+
+    correct_value = data.get("correct")
+    if correct_value is None:
+        correct = None
+    else:
+        correct = 1 if bool(correct_value) else 0
+
+    selected_value = data.get("selected")
+    if selected_value is None and data.get("feeling") is not None:
+        selected_value = data.get("feeling")
+
+    event = GameEvent(
+        session_id=session.id,
+        event_type=data.get("event_type"),
+        item_id=item_id,
+        expected=data.get("expected"),
+        selected=selected_value,
+        correct=correct,
+        attempts=data.get("attempts"),
+        duration_ms=data.get("duration_ms"),
+    )
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    return {
+        "status": "ok",
+        "event_id": event.id,
+        "session_id": session.id,
+        "session_uuid": session.session_uuid
+    }
+
+@app.get("/api/game-events/{session_id}")
+def get_game_events(session_id: int, db: Session = Depends(get_db)):
+    events = (
+        db.query(GameEvent)
+        .filter(GameEvent.session_id == session_id)
+        .order_by(GameEvent.timestamp.asc(), GameEvent.id.asc())
+        .all()
+    )
     return [
         {
-            "id": s.id, "date": s.date_recorded.strftime("%Y-%m-%d %H:%M"),
-            "duration": s.duration, "video_url": s.video_url,
-            "timeline": [{"time": t.timestamp_str, "emotion": t.emotion} for t in s.timeline]
+            "id": e.id,
+            "session_id": e.session_id,
+            "event_type": e.event_type,
+            "item_id": e.item_id,
+            "expected": e.expected,
+            "selected": e.selected,
+            "correct": e.correct,
+            "attempts": e.attempts,
+            "duration_ms": e.duration_ms,
+            "timestamp": e.timestamp.isoformat() if e.timestamp else None,
         }
-        for s in sessions
+        for e in events
     ]
 
+@app.get("/api/game-events/latest/{patient_id}")
+def get_latest_game_events(patient_id: int, db: Session = Depends(get_db)):
+    latest_session = (
+        db.query(SessionRecord)
+        .filter(SessionRecord.patient_id == patient_id)
+        .order_by(SessionRecord.date_recorded.desc(), SessionRecord.id.desc())
+        .first()
+    )
+    if not latest_session:
+        return []
+
+    events = (
+        db.query(GameEvent)
+        .filter(GameEvent.session_id == latest_session.id)
+        .order_by(GameEvent.timestamp.asc(), GameEvent.id.asc())
+        .all()
+    )
+    return [
+        {
+            "id": e.id,
+            "session_id": e.session_id,
+            "event_type": e.event_type,
+            "item_id": e.item_id,
+            "expected": e.expected,
+            "selected": e.selected,
+            "correct": e.correct,
+            "attempts": e.attempts,
+            "duration_ms": e.duration_ms,
+            "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+        }
+        for e in events
+    ]
 
 @app.get("/history")
 def get_history():
@@ -497,15 +629,21 @@ def get_history():
     for video_path in video_files:
         if "temp_" in video_path.name:
             continue
+
         session_id = video_path.stem
         json_path = UPLOAD_DIR / f"{session_id}.json"
+
         file_stat = video_path.stat()
         creation_time = datetime.fromtimestamp(file_stat.st_mtime).strftime("%Y-%m-%d %H:%M")
 
         session_data = {
-            "id": session_id, "date": creation_time, "duration": "Unknown",
-            "timeline": [], "video_url": f"/uploads/{video_path.name}"
+            "id": session_id,
+            "date": creation_time,
+            "duration": "Unknown",
+            "timeline": [],
+            "video_url": f"/uploads/{video_path.name}"
         }
+
         if json_path.exists():
             try:
                 with open(json_path, "r") as f:
@@ -514,14 +652,18 @@ def get_history():
                     session_data["timeline"] = saved_data.get("timeline", [])
                     if "date" in saved_data:
                         session_data["date"] = saved_data["date"]
-            except Exception:
+            except:
                 pass
+
         sessions.append(session_data)
 
     return sorted(sessions, key=lambda x: x['date'], reverse=True)
 
+@app.get("/sessions/{session_uuid}/live")
+def get_live_session(session_uuid: str):
+    return get_live_session_payload(session_uuid)
 
-# ------------------- REPORT / NOTES / TRENDS HELPERS -------------------
+# ------------------- REPORT / NOTES / TRENDS HELPERS (FROM YOUR VERSION) -------------------
 
 def _parse_seconds(time_str: str) -> int:
     if not time_str:
@@ -566,8 +708,7 @@ def _build_timeline_svg(timeline, total_secs: int, width: int = 740, height: int
         f'{"".join(rects)}{"".join(ticks)}</svg>'
     )
 
-
-# ------------------- REPORT -------------------
+# ------------------- REPORT (FROM YOUR VERSION) -------------------
 
 @app.get("/report/{session_id}", response_class=HTMLResponse)
 def generate_report(session_id: int, db: Session = Depends(get_db)):
@@ -774,8 +915,7 @@ tr:last-child td{{border-bottom:none}}
 </html>"""
     return HTMLResponse(content=report_html)
 
-
-# ------------------- TRENDS -------------------
+# ------------------- TRENDS (FROM YOUR VERSION) -------------------
 
 @app.get("/trends/{patient_id}")
 def get_trends(patient_id: int, db: Session = Depends(get_db)):
@@ -825,8 +965,7 @@ def get_trends(patient_id: int, db: Session = Depends(get_db)):
 
     return {"insights": insights}
 
-
-# ------------------- NOTES -------------------
+# ------------------- NOTES (FROM YOUR VERSION) -------------------
 
 class NoteIn(BaseModel):
     seconds: int
@@ -876,229 +1015,224 @@ def delete_note(note_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"ok": True}
 
+# ------------------- WEBSOCKET STREAM (ALISHA'S VERSION) -------------------
 
-# ------------------- SESSION FINALIZATION (ASYNC BACKGROUND) -------------------
+@app.websocket("/ws/child-session/{patient_id}")
+async def child_session_stream(ws: WebSocket, patient_id: int):
+    print(f"[WS] Incoming child-session connection for patient_id={patient_id}")
+    await stream(ws, patient_id=patient_id, session_uuid=None)
 
-async def _finalize_session(
-    session_id: str,
-    temp_video_path: Path,
-    temp_audio_path: Path,
-    final_output_path: Path,
-    json_path: Path,
-    audio_data: bytes,
-    start_time: float,
-    session_timeline: list,
-    patient_id: int,
-    session_db_id: int,
-):
-    print(f"💾 Finalizing session {session_id} in background...")
+@app.websocket("/ws/session/{session_uuid}")
+async def session_stream(ws: WebSocket, session_uuid: str):
+    print(f"[WS] Incoming session connection for session_uuid={session_uuid}")
+    await stream(ws, patient_id=None, session_uuid=session_uuid)
 
-    has_audio = len(audio_data) > 0
-    if has_audio:
-        try:
-            def _export_audio():
-                buf = io.BytesIO(audio_data)
-                AudioSegment.from_file(buf, format="webm").export(temp_audio_path, format="wav")
-            await asyncio.to_thread(_export_audio)
-        except Exception as e:
-            print(f"⚠️  Audio export error: {e}")
-            has_audio = False
-
-    try:
-        if has_audio:
-            command = [
-                "ffmpeg", "-y",
-                "-i", str(temp_video_path), "-i", str(temp_audio_path),
-                "-c:v", "copy", "-c:a", "libopus", str(final_output_path)
-            ]
-        else:
-            command = [
-                "ffmpeg", "-y",
-                "-i", str(temp_video_path),
-                "-c:v", "copy", str(final_output_path)
-            ]
-        await asyncio.to_thread(
-            subprocess.run, command,
-            **{"check": True, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
-        )
-        if temp_video_path.exists():
-            await asyncio.to_thread(os.remove, temp_video_path)
-        if has_audio and temp_audio_path.exists():
-            await asyncio.to_thread(os.remove, temp_audio_path)
-        print("✅ Session saved.")
-    except Exception as e:
-        print(f"❌ FFmpeg mux failed: {e}")
-        if temp_video_path.exists():
-            await asyncio.to_thread(os.rename, temp_video_path, final_output_path)
-
-    duration_delta = int(time.time() - start_time)
-    duration_str = f"{duration_delta // 60:02}:{duration_delta % 60:02}"
-
-    def _write_json():
-        with open(json_path, "w") as f:
-            json.dump({
-                "session_id": session_id,
-                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "duration": duration_str,
-                "timeline": session_timeline
-            }, f, indent=2)
-    await asyncio.to_thread(_write_json)
-
-    def _save_to_db():
-        db = SessionLocal()
-        try:
-            record = db.query(SessionRecord).filter(SessionRecord.id == session_db_id).first()
-            if record:
-                record.duration = duration_str
-                record.video_url = f"/uploads/{session_id}.webm"
-                db.commit()
-                db.refresh(record)
-                record_id = record.id
-            else:
-                fallback = SessionRecord(
-                    patient_id=patient_id, session_uuid=session_id,
-                    duration=duration_str, video_url=f"/uploads/{session_id}.webm"
-                )
-                db.add(fallback)
-                db.commit()
-                db.refresh(fallback)
-                record_id = fallback.id
-
-            if session_timeline:
-                db.add_all([
-                    TimelineEntry(
-                        session_id=record_id, timestamp_str=e['time'],
-                        seconds=e['seconds'], emotion=e['emotion'],
-                        confidence=e['confidence']
-                    )
-                    for e in session_timeline
-                ])
-                db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"DB Error: {e}")
-        finally:
-            db.close()
-    await asyncio.to_thread(_save_to_db)
-
-    print(f"✅ Session {session_id} finalization complete.")
-
-
-# ------------------- WEBSOCKET STREAM -------------------
-
-@app.websocket("/ws/stream/{patient_id}")
-async def stream(ws: WebSocket, patient_id: int):
-    # NO model loading here - models load on first frame/audio
+async def stream(ws: WebSocket, patient_id: Optional[int] = None, session_uuid: Optional[str] = None):
     await ws.accept()
 
+    db = SessionLocal()
     engine_state = EmotionEngine()
 
-    timestamp_id = int(time.time())
-    session_id = f"session_{timestamp_id}"
-
-    temp_video_path = UPLOAD_DIR / f"temp_vid_{timestamp_id}.webm"
-    temp_audio_path = UPLOAD_DIR / f"temp_aud_{timestamp_id}.wav"
-    final_output_path = UPLOAD_DIR / f"{session_id}.webm"
-    json_path = UPLOAD_DIR / f"{session_id}.json"
-
-    fourcc = cv2.VideoWriter_fourcc(*'vp80')
-    out = cv2.VideoWriter(str(temp_video_path), fourcc, 5.0, (640, 480))
-    audio_buffer = io.BytesIO()
-
-    start_time = time.time()
-    session_timeline = []
-
-    last_v_scores = None
-    last_a_scores = None
-    frame_count = 0
-
-    def _create_initial_session():
-        db = SessionLocal()
-        try:
-            rec = SessionRecord(
-                patient_id=patient_id, session_uuid=session_id,
-                duration="00:00", video_url=""
-            )
-            db.add(rec)
-            db.commit()
-            db.refresh(rec)
-            return rec.id
-        except Exception as e:
-            db.rollback()
-            print(f"DB Error creating initial session: {e}")
-            return None
-        finally:
-            db.close()
-
-    session_db_id = await asyncio.to_thread(_create_initial_session)
-    if session_db_id:
-        await ws.send_json({"status": "session_started", "session_db_id": session_db_id})
+    active_session = None
 
     try:
-        while True:
-            data = await ws.receive_json()
+        if session_uuid:
+            active_session = get_session_by_uuid(db, session_uuid)
+            if not active_session:
+                await ws.send_json({"status": "error", "detail": "Session not found"})
+                await ws.close()
+                return
+        else:
+            if patient_id is None:
+                await ws.send_json({"status": "error", "detail": "patient_id or session_uuid required"})
+                await ws.close()
+                return
+            active_session = ensure_active_session_for_patient(db, patient_id)
 
-            if data.get("event") == "stop":
-                await ws.send_json({"status": "finished"})
-                break
+        session_uuid = active_session.session_uuid
 
-            if "image" in data:
-                img_bytes = base64.b64decode(data["image"].split(",")[-1])
-                frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
-                if frame is not None:
-                    resized = cv2.resize(frame, (640, 480))
-                    out.write(resized)
-                    frame_count += 1
+        temp_video_path = UPLOAD_DIR / f"temp_vid_{session_uuid}.webm"
+        temp_audio_path = UPLOAD_DIR / f"temp_aud_{session_uuid}.wav"
+        final_output_path = UPLOAD_DIR / f"{session_uuid}.webm"
+        json_path = UPLOAD_DIR / f"{session_uuid}.json"
 
-                    if frame_count % 3 == 0:
-                        v_res = await asyncio.to_thread(engine_state.process_video, resized)
-                        if v_res:
-                            last_v_scores = v_res
+        fourcc = cv2.VideoWriter_fourcc(*'vp80')
+        out = cv2.VideoWriter(str(temp_video_path), fourcc, 5.0, (640, 480))
+        audio_buffer = io.BytesIO()
 
-            if data.get("audio"):
-                raw_audio = data["audio"]
-                try:
-                    audio_bytes = base64.b64decode(raw_audio.split(",")[-1])
-                    audio_buffer.write(audio_bytes)
-                    a_res = await asyncio.to_thread(engine_state.process_audio, raw_audio)
-                    if a_res:
-                        last_a_scores = a_res
-                except Exception:
-                    pass
+        start_time = time.time()
+        session_timeline = []
 
-            final_emotion, final_scores = engine_state.fusion(last_v_scores, last_a_scores)
+        last_v_scores = None
+        last_a_scores = None
+        frame_count = 0
 
-            elapsed = int(time.time() - start_time)
-            timestamp = f"{elapsed // 60:02}:{elapsed % 60:02}"
+        try:
+            while True:
+                data = await ws.receive_json()
 
-            should_log = False
-            if not session_timeline:
-                should_log = True
-            elif session_timeline[-1]['emotion'] != final_emotion:
-                should_log = True
-            elif (elapsed - session_timeline[-1]['seconds']) > 2:
-                should_log = True
+                print("📡 WS DATA RECEIVED:", list(data.keys()))
 
-            if should_log:
-                session_timeline.append({
-                    "time": timestamp, "seconds": elapsed,
+                if data.get("event") == "stop":
+                    await ws.send_json({"status": "finished", "session_uuid": session_uuid})
+                    break
+
+                if "image" in data:
+                    img_bytes = base64.b64decode(data["image"].split(",")[-1])
+                    frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        resized = cv2.resize(frame, (640, 480))
+                        out.write(resized)
+
+                        frame_count += 1
+                        if frame_count % 3 == 0:
+                            v_res = engine_state.process_video(resized)
+                            if v_res:
+                                last_v_scores = v_res
+
+                if data.get("audio"):
+                    raw_audio = data["audio"]
+                    try:
+                        audio_bytes = base64.b64decode(raw_audio.split(",")[-1])
+                        audio_buffer.write(audio_bytes)
+
+                        a_res = engine_state.process_audio(raw_audio)
+                        if a_res:
+                            last_a_scores = a_res
+                    except:
+                        pass
+
+                final_emotion, final_scores = engine_state.fusion(last_v_scores, last_a_scores)
+                print("🧠 EMOTION:", final_emotion)
+
+                elapsed = int(time.time() - start_time)
+                timestamp = f"{elapsed // 60:02}:{elapsed % 60:02}"
+
+                should_log = False
+                if not session_timeline:
+                    should_log = True
+                elif session_timeline[-1]["emotion"] != final_emotion:
+                    should_log = True
+                elif (elapsed - session_timeline[-1]["seconds"]) > 2:
+                    should_log = True
+
+                if should_log:
+                    session_timeline.append({
+                        "time": timestamp,
+                        "seconds": elapsed,
+                        "emotion": final_emotion,
+                        "confidence": float(final_scores.get(final_emotion, 0))
+                    })
+
+                live_payload = {
+                    "status": "processing",
+                    "session_uuid": session_uuid,
+                    "timestamp": timestamp,
                     "emotion": final_emotion,
-                    "confidence": float(final_scores.get(final_emotion, 0))
-                })
+                    "scores": final_scores,
+                    "updated_at": datetime.utcnow().isoformat()
+                }
 
-            await ws.send_json({
-                "status": "processing", "timestamp": timestamp,
-                "emotion": final_emotion, "scores": final_scores
-            })
+                LIVE_SESSION_STATE[session_uuid] = live_payload
 
-    except WebSocketDisconnect:
-        print("Client disconnected.")
+                await ws.send_json(live_payload)
+
+        except WebSocketDisconnect:
+            print("Client disconnected.")
+
+        finally:
+            print(f"💾 Finalizing session {session_uuid}...")
+            out.release()
+
+            audio_buffer.seek(0)
+            has_audio = audio_buffer.getbuffer().nbytes > 0
+
+            if has_audio:
+                final_audio = AudioSegment.from_file(audio_buffer, format="webm")
+                final_audio.export(temp_audio_path, format="wav")
+
+            try:
+                if has_audio:
+                    command = [
+                        "ffmpeg", "-y",
+                        "-i", str(temp_video_path),
+                        "-i", str(temp_audio_path),
+                        "-c:v", "copy",
+                        "-c:a", "libopus",
+                        str(final_output_path)
+                    ]
+                else:
+                    command = [
+                        "ffmpeg", "-y",
+                        "-i", str(temp_video_path),
+                        "-c:v", "copy",
+                        str(final_output_path)
+                    ]
+
+                subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                if temp_video_path.exists():
+                    os.remove(temp_video_path)
+                if temp_audio_path.exists() and has_audio:
+                    os.remove(temp_audio_path)
+
+                print("✅ Session Saved.")
+
+            except Exception as e:
+                print(f"❌ Save Failed: {e}")
+                if temp_video_path.exists():
+                    os.rename(temp_video_path, final_output_path)
+
+            duration_delta = int(time.time() - start_time)
+            duration_str = format_duration_from_seconds(duration_delta)
+
+            with open(json_path, "w") as f:
+                json.dump({
+                    "session_id": session_uuid,
+                    "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "duration": duration_str,
+                    "timeline": session_timeline
+                }, f, indent=2)
+
+            try:
+                active_session.video_url = f"/uploads/{session_uuid}.webm"
+                active_session.duration = duration_str
+                active_session.ended_at = datetime.utcnow()
+                active_session.status = "completed"
+
+                db.query(TimelineEntry).filter(TimelineEntry.session_id == active_session.id).delete()
+
+                db.commit()
+
+                if session_timeline:
+                    db_entries = [
+                        TimelineEntry(
+                            session_id=active_session.id,
+                            timestamp_str=e["time"],
+                            seconds=e["seconds"],
+                            emotion=e["emotion"],
+                            confidence=e["confidence"]
+                        )
+                        for e in session_timeline
+                    ]
+                    db.add_all(db_entries)
+                    db.commit()
+
+                db.refresh(active_session)
+
+            except Exception as e:
+                db.rollback()
+                print(f"DB Error: {e}")
 
     finally:
-        out.release()
-        audio_data = audio_buffer.getvalue()
-        asyncio.create_task(_finalize_session(
-            session_id, temp_video_path, temp_audio_path, final_output_path,
-            json_path, audio_data, start_time, session_timeline, patient_id,
-            session_db_id or 0
-        ))
+        if session_uuid:
+            LIVE_SESSION_STATE[session_uuid] = {
+                "status": "finished",
+                "session_uuid": session_uuid,
+                "timestamp": duration_str if "duration_str" in locals() else "00:00",
+                "emotion": session_timeline[-1]["emotion"] if "session_timeline" in locals() and session_timeline else "neutral",
+                "scores": {k: 0.0 for k in COMMON_EMOTIONS},
+                "updated_at": datetime.utcnow().isoformat()
+            }
+
+        db.close()
