@@ -924,7 +924,7 @@ async def _finalize_session(
             command = [
                 "ffmpeg", "-y",
                 "-i", str(temp_video_path), "-i", str(temp_audio_path),
-                "-c:v", "copy", "-c:a", "libopus", str(final_output_path)
+                "-c:v", "copy", "-c:a", "aac", str(final_output_path)
             ]
         else:
             command = [
@@ -968,7 +968,7 @@ async def _finalize_session(
             record = db.query(SessionRecord).filter(SessionRecord.id == session_db_id).first()
             if record:
                 record.duration = duration_str
-                record.video_url = f"/uploads/{session_id}.webm"
+                record.video_url = f"/uploads/{session_id}.mp4"
                 db.commit()
                 db.refresh(record)
                 record_id = record.id
@@ -976,7 +976,7 @@ async def _finalize_session(
                 # Fallback in case the initial record was lost
                 fallback = SessionRecord(
                     patient_id=patient_id, session_uuid=session_id,
-                    duration=duration_str, video_url=f"/uploads/{session_id}.webm"
+                    duration=duration_str, video_url=f"/uploads/{session_id}.mp4"
                 )
                 db.add(fallback)
                 db.commit()
@@ -1014,12 +1014,12 @@ async def stream(ws: WebSocket, patient_id: int):
     timestamp_id = int(time.time())
     session_id = f"session_{timestamp_id}"
 
-    temp_video_path = UPLOAD_DIR / f"temp_vid_{timestamp_id}.webm"
+    temp_video_path = UPLOAD_DIR / f"temp_vid_{timestamp_id}.mp4"
     temp_audio_path = UPLOAD_DIR / f"temp_aud_{timestamp_id}.wav"
-    final_output_path = UPLOAD_DIR / f"{session_id}.webm"
+    final_output_path = UPLOAD_DIR / f"{session_id}.mp4"
     json_path = UPLOAD_DIR / f"{session_id}.json"
 
-    fourcc = cv2.VideoWriter_fourcc(*'vp80')
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(str(temp_video_path), fourcc, 5.0, (640, 480))
     audio_buffer = io.BytesIO()
 
