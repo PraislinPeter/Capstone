@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { BrainCircuit, UserPlus, Users, LogOut } from 'lucide-react';
 
@@ -13,8 +13,10 @@ export default function App() {
     <BrowserRouter>
       <div className="flex h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden w-full">
         <Sidebar />
+
         <main className="flex-1 flex flex-col overflow-hidden w-full min-w-0">
           <Header />
+
           <div className="flex-1 overflow-y-auto p-6 w-full h-full">
             <Routes>
               <Route path="/" element={<PatientList />} />
@@ -36,7 +38,8 @@ function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <aside className={`${collapsed ? 'w-16' : 'w-64'} bg-white border-r border-slate-200 flex flex-col shrink-0 transition-all duration-200`}>
+    <aside className={`${collapsed ? 'w-16' : 'w-56'} bg-white border-r border-slate-200 flex flex-col shrink-0 transition-all duration-200`}>
+      {/* Logo — click to toggle */}
       <button
         onClick={() => setCollapsed(c => !c)}
         className={`p-4 flex items-center gap-3 hover:bg-slate-50 transition-colors ${collapsed ? 'justify-center' : ''}`}
@@ -51,6 +54,7 @@ function Sidebar() {
         )}
       </button>
 
+      {/* Nav */}
       <nav className="flex-1 px-2 space-y-1 mt-2">
         <NavItem
           icon={<Users size={20} />}
@@ -68,6 +72,7 @@ function Sidebar() {
         />
       </nav>
 
+      {/* Footer */}
       <div className="p-2 border-t border-slate-100">
         <button className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-all ${collapsed ? 'justify-center' : ''}`}>
           <LogOut size={16} />
@@ -82,7 +87,7 @@ function Header() {
   const location = useLocation();
   let path = location.pathname.split('/')[1];
   if (!path) path = 'Patients';
-  
+
   return (
     <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 w-full">
       <h2 className="font-semibold text-slate-800 capitalize">

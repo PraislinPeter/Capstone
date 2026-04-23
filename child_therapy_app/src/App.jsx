@@ -1,89 +1,60 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
-import useCamera from "./hooks/useCamera";
+import React, { useState, useCallback, useEffect } from "react";
 import HardwareAPI from "./api/hardware";
 import HomeScreen from "./screens/HomeScreen";
 import TextureBookScreen from "./screens/TextureBookScreen";
-import ScenariosScreen from "./screens/ScenariosScreen";
 import StressCheckScreen from "./screens/StressCheckScreen";
 import BreatheScreen from "./screens/BreatheScreen";
 
+/**
+ * App — root component with stress-aware routing.
+ *
+ * Break handling:
+ *   TextureBookScreen stays MOUNTED during breaks (hidden via CSS).
+ *   When the break ends, the child returns to exactly where they were —
+ *   same texture, same question, same progress.
+ */
 export default function App() {
-  const { start, stop, captureFrame } = useCamera();
   const [screen, setScreen] = useState("home");
-  const [sessionLog, setSessionLog] = useState([]);
   const [stressSignals, setStressSignals] = useState(0);
   const [stressReason, setStressReason] = useState(null);
-  const [completedActivities, setCompletedActivities] = useState({
-    textures: false,
-    scenarios: false,
-  });
+  const [activityComplete, setActivityComplete] = useState(false);
 
-  const prevScreen = useRef("home");
-  const streamingIntervalRef = useRef(null);
-
-  const startStreamingLoop = useCallback(() => {
-    if (streamingIntervalRef.current) return;
-
-    streamingIntervalRef.current = setInterval(() => {
-      try {
-        const frame = captureFrame();
-        if (frame) {
-          HardwareAPI.sendVideoFrame(frame);
-        }
-      } catch (err) {
-        console.warn("Frame send failed:", err.message);
-      }
-    }, 200);
-  }, [captureFrame]);
-
-  const stopStreamingLoop = useCallback(() => {
-    if (streamingIntervalRef.current) {
-      clearInterval(streamingIntervalRef.current);
-      streamingIntervalRef.current = null;
-    }
-  }, []);
+  // Track whether texture book has been entered (so we keep it mounted)
+  const [textureBookActive, setTextureBookActive] = useState(false);
+  // Track where to return after break
+  const [breakReturnTo, setBreakReturnTo] = useState(null);
 
   useEffect(() => {
-    let mounted = true;
+    const params = new URLSearchParams(window.location.search);
+    const patientId = parseInt(params.get("patient"), 10) || 1;
+    console.log(`[APP] Starting session for patient ${patientId}`);
+    HardwareAPI.startSession(patientId);
+    return () => { HardwareAPI.endSession(); };
+  }, []);
 
-    const init = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const patientId = parseInt(params.get("patient"), 10) || 1;
+  const navigate = useCallback((target) => {
+    HardwareAPI.logEvent("navigate", { to: target });
 
-      console.log(`[APP] Starting session for patient ${patientId}`);
+    if (target === "texture-book") {
+      setTextureBookActive(true);
+    }
 
-      try {
-        if (!mounted) return;
+    // If navigating to break from texture book, remember to return there
+    if (target === "stress-check" || target === "breathe") {
+      setBreakReturnTo((prev) => prev || (screen === "texture-book" ? "texture-book" : null));
+    }
 
-        await HardwareAPI.startSession(patientId);
-        await start();
-        startStreamingLoop();
-      } catch (err) {
-        console.error("[APP] Failed to initialize session:", err);
-      }
-    };
+    // If going home, fully close the texture book
+    if (target === "home") {
+      setTextureBookActive(false);
+      setBreakReturnTo(null);
+    }
 
-    init();
-
-    return () => {
-      mounted = false;
-      stopStreamingLoop();
-      stop();
-      HardwareAPI.endSession();
-    };
-  }, [start, stop, startStreamingLoop, stopStreamingLoop]);
-
-  const navigate = useCallback(
-    (target) => {
-      prevScreen.current = screen;
-      HardwareAPI.logEvent("navigate", { to: target });
-      setScreen(target);
-    },
-    [screen]
-  );
+    setScreen(target);
+  }, [screen]);
 
   const logEvent = useCallback((type, data) => {
-    setSessionLog((prev) => [...prev, { type, ...data, time: Date.now() }]);
+    console.log(`[APP] Event: ${type}`, data);
   }, []);
 
   const handleStressSignal = useCallback((isCorrect) => {
@@ -92,6 +63,7 @@ export default function App() {
         const next = prev + 1;
         if (next >= 3) {
           setStressReason("struggling");
+          setBreakReturnTo("texture-book");
           setScreen("stress-check");
           return 0;
         }
@@ -102,8 +74,9 @@ export default function App() {
     }
   }, []);
 
-  const handleActivityComplete = useCallback((activity) => {
-    setCompletedActivities((prev) => ({ ...prev, [activity]: true }));
+  const handleActivityComplete = useCallback(() => {
+    setActivityComplete(true);
+    setTextureBookActive(false);
     setStressReason("check-in");
     setScreen("stress-check");
   }, []);
@@ -111,42 +84,29 @@ export default function App() {
   const handleBreakComplete = useCallback(() => {
     setStressSignals(0);
     setStressReason(null);
-    setScreen("home");
-  }, []);
-
-  const fontLink = (
-    <link
-      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap"
-      rel="stylesheet"
-    />
-  );
+    const returnTo = breakReturnTo || "home";
+    setBreakReturnTo(null);
+    setScreen(returnTo);
+  }, [breakReturnTo]);
 
   return (
     <>
-      {fontLink}
+      <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
 
       {screen === "home" && (
-        <HomeScreen
-          onNavigate={navigate}
-          completedActivities={completedActivities}
-        />
+        <HomeScreen onNavigate={navigate} activityComplete={activityComplete} />
       )}
 
-      {screen === "texture-book" && (
-        <TextureBookScreen
-          onNavigate={navigate}
-          onLogEvent={logEvent}
-          onActivityComplete={() => handleActivityComplete("textures")}
-        />
-      )}
-
-      {screen === "scenarios" && (
-        <ScenariosScreen
-          onNavigate={navigate}
-          onLogEvent={logEvent}
-          onStressSignal={handleStressSignal}
-          onActivityComplete={() => handleActivityComplete("scenarios")}
-        />
+      {/* TextureBookScreen stays mounted while active — hidden during breaks */}
+      {textureBookActive && (
+        <div style={{ display: screen === "texture-book" ? "block" : "none" }}>
+          <TextureBookScreen
+            onNavigate={navigate}
+            onLogEvent={logEvent}
+            onStressSignal={handleStressSignal}
+            onActivityComplete={handleActivityComplete}
+          />
+        </div>
       )}
 
       {screen === "stress-check" && (
@@ -156,7 +116,6 @@ export default function App() {
           onBreakComplete={handleBreakComplete}
         />
       )}
-
       {screen === "breathe" && (
         <BreatheScreen
           onNavigate={navigate}
