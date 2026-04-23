@@ -1,4 +1,4 @@
-import React from 'react';
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { BrainCircuit, UserPlus, Users, LogOut } from 'lucide-react';
 
@@ -43,36 +43,49 @@ export default function App() {
 function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
-    // CHANGED: w-64 -> w-80 (This makes it 320px wide instead of 256px)
-    <aside className="w-[450px] bg-white border-r border-slate-200 flex flex-col shrink-0">
-      <div className="p-6 flex items-center gap-3">
-        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-          <BrainCircuit size={24} />
+    <aside className={`${collapsed ? 'w-16' : 'w-56'} bg-white border-r border-slate-200 flex flex-col shrink-0 transition-all duration-200`}>
+      {/* Logo — click to toggle */}
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        className={`p-4 flex items-center gap-3 hover:bg-slate-50 transition-colors ${collapsed ? 'justify-center' : ''}`}
+      >
+        <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0">
+          <BrainCircuit size={20} />
         </div>
-        <h1 className="font-bold text-lg leading-tight">Clinician<span className="text-indigo-600">.AI</span></h1>
-      </div>
+        {!collapsed && (
+          <h1 className="font-bold text-base leading-tight whitespace-nowrap">
+            Clinician<span className="text-indigo-600">.AI</span>
+          </h1>
+        )}
+      </button>
 
-      <nav className="flex-1 px-4 space-y-1 mt-4">
-        <NavItem 
-          icon={<Users size={20} />} 
-          label="All Patients" 
-          active={location.pathname === '/'} 
-          onClick={() => navigate('/')} 
+      {/* Nav */}
+      <nav className="flex-1 px-2 space-y-1 mt-2">
+        <NavItem
+          icon={<Users size={20} />}
+          label="All Patients"
+          active={location.pathname === '/'}
+          onClick={() => navigate('/')}
+          collapsed={collapsed}
         />
-        <NavItem 
-          icon={<UserPlus size={20} />} 
-          label="New Registration" 
-          active={location.pathname === '/register'} 
-          onClick={() => navigate('/register')} 
+        <NavItem
+          icon={<UserPlus size={20} />}
+          label="New Registration"
+          active={location.pathname === '/register'}
+          onClick={() => navigate('/register')}
+          collapsed={collapsed}
         />
       </nav>
-      
-      <div className="p-4 border-t border-slate-100">
-         <button className="flex items-center gap-2 w-full px-4 py-2 text-sm text-slate-500 hover:text-rose-600">
-           <LogOut size={16} /> Sign Out
-         </button>
+
+      {/* Footer */}
+      <div className="p-2 border-t border-slate-100">
+        <button className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-all ${collapsed ? 'justify-center' : ''}`}>
+          <LogOut size={16} />
+          {!collapsed && <span>Sign Out</span>}
+        </button>
       </div>
     </aside>
   );
@@ -92,10 +105,15 @@ function Header() {
   );
 }
 
-function NavItem({ icon, label, active, onClick }) {
+function NavItem({ icon, label, active, onClick, collapsed }) {
   return (
-    <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${active ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}>
-      {icon} <span className="text-sm">{label}</span>
+    <button
+      onClick={onClick}
+      title={collapsed ? label : undefined}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${collapsed ? 'justify-center' : ''} ${active ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}
+    >
+      {icon}
+      {!collapsed && <span className="text-sm">{label}</span>}
     </button>
   );
 }

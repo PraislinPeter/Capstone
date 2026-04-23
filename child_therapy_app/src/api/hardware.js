@@ -1,12 +1,12 @@
 // ─── Hardware + Backend Integration Layer ───────────────────────────────────
-const BACKEND_URL = "http://127.0.0.1:8000";
-const WS_URL = "ws://127.0.0.1:8000";
+//
+// Simulation mode — no ESP32, no Pi camera needed.
+// Each texture book playthrough creates a NEW backend session.
+//
+const BACKEND_URL = "http://localhost:8000";
 
-let _sessionWs = null;
-let _sessionUuid = null;
-let _sessionDbId = null;
 let _patientId = null;
-let _lastEmotionPacket = null;
+let _gameSessionId = null; // backend session ID for current game
 
 const safeJson = async (res) => {
   try { return await res.json(); } catch { return null; }
@@ -14,125 +14,59 @@ const safeJson = async (res) => {
 
 const HardwareAPI = {
 
-  // ─── Session lifecycle ─────────────────────────────────────────────────
+  // ─── App lifecycle ─────────────────────────────────────────────────
   startSession: async (patientId) => {
     _patientId = patientId;
-
-    // 1. Create or reuse session via REST
-    const res = await fetch(`${BACKEND_URL}/sessions/start`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ patient_id: patientId }),
-    });
-
-    const data = await safeJson(res);
-    if (!res.ok) throw new Error(data?.detail || `Failed to start session (${res.status})`);
-
-    _sessionUuid = data.session_uuid;
-    _sessionDbId = data.session_id;
-    console.log(`[SESSION] Started: ${_sessionUuid} for patient ${_patientId}`);
-
-    // 2. ███ CRITICAL FIX: Actually open the WebSocket ███
-    try {
-      _sessionWs = new WebSocket(`${WS_URL}/ws/child-session/${_patientId}`);
-
-      _sessionWs.onopen = () => {
-        console.log(`[WS] ✅ Connected to /ws/child-session/${_patientId}`);
-      };
-
-      _sessionWs.onmessage = (e) => {
-        try {
-          const packet = JSON.parse(e.data);
-          _lastEmotionPacket = packet;
-          // Backend sends back emotion results — store for reference
-          if (packet.emotion) {
-            console.log(`[WS] 🧠 Emotion: ${packet.emotion} (${packet.timestamp})`);
-          }
-        } catch {}
-      };
-
-      _sessionWs.onerror = (err) => {
-        console.warn("[WS] Connection error (frames won't be analyzed):", err);
-      };
-
-      _sessionWs.onclose = () => {
-        console.log("[WS] Connection closed");
-        _sessionWs = null;
-      };
-
-      // Wait briefly for connection to establish
-      await new Promise((resolve) => {
-        const check = setInterval(() => {
-          if (_sessionWs && _sessionWs.readyState === WebSocket.OPEN) {
-            clearInterval(check);
-            resolve();
-          }
-        }, 50);
-        // Timeout after 3 seconds — don't block forever
-        setTimeout(() => { clearInterval(check); resolve(); }, 3000);
-      });
-
-    } catch (err) {
-      console.warn("[WS] WebSocket not available:", err.message);
-      _sessionWs = null;
-    }
-
-    return _sessionUuid;
+    console.log(`[SESSION] App started for patient ${_patientId}`);
+    return `sim_${Date.now()}`;
   },
 
   endSession: async () => {
-    const closingUuid = _sessionUuid;
-
-    // Send stop event via WS
-    try {
-      if (_sessionWs && _sessionWs.readyState === WebSocket.OPEN) {
-        _sessionWs.send(JSON.stringify({ event: "stop" }));
-      }
-    } catch {}
-
-    // End session via REST
-    try {
-      if (closingUuid) {
-        const res = await fetch(`${BACKEND_URL}/sessions/${closingUuid}/end`, { method: "POST" });
-        const data = await safeJson(res);
-        if (res.ok) console.log(`[SESSION] Ended: ${closingUuid} (${data?.duration || "?"})`);
-        else console.error("[SESSION] End failed:", data?.detail);
-      }
-    } catch (err) {
-      console.error("[SESSION] End error:", err.message);
-    }
-
-    // Close WS
-    try { if (_sessionWs) _sessionWs.close(); } catch {}
-
-    _sessionWs = null;
-    _sessionUuid = null;
-    _sessionDbId = null;
+    console.log(`[SESSION] App ended for patient ${_patientId}`);
     _patientId = null;
-    _lastEmotionPacket = null;
+    _gameSessionId = null;
   },
 
   getPatientId: () => _patientId,
-  getSessionUuid: () => _sessionUuid,
-  getSessionId: () => _sessionDbId,
-  getLastEmotionPacket: () => _lastEmotionPacket,
+  getGameSessionId: () => _gameSessionId,
 
-  // ─── Camera/audio streaming ────────────────────────────────────────────
-  sendVideoFrame: (base64Jpeg) => {
-    if (_sessionWs && _sessionWs.readyState === WebSocket.OPEN) {
-      _sessionWs.send(JSON.stringify({ image: base64Jpeg }));
+  // ─── Game session (one per texture book playthrough) ────────────────
+  //
+  // Called by TextureBookScreen on mount. Creates a fresh session on the
+  // backend so each playthrough has its own isolated event log.
+  //
+  createGameSession: async () => {
+    if (!_patientId) {
+      console.warn("[GAME] No patient — can't create session");
+      return null;
+    }
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/game-session/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patient_id: _patientId }),
+      });
+      const data = await safeJson(res);
+      if (res.ok && data?.session_id) {
+        _gameSessionId = data.session_id;
+        console.log(`[GAME] ✅ New game session created: ${_gameSessionId}`);
+        return _gameSessionId;
+      } else {
+        console.warn("[GAME] Session creation failed, events will use latest session:", data);
+        _gameSessionId = null;
+        return null;
+      }
+    } catch (err) {
+      console.warn("[GAME] Backend unreachable — events will auto-create session:", err.message);
+      _gameSessionId = null;
+      return null;
     }
   },
 
-  sendAudioChunk: (base64Webm) => {
-    if (_sessionWs && _sessionWs.readyState === WebSocket.OPEN) {
-      _sessionWs.send(JSON.stringify({ audio: base64Webm }));
-    }
-  },
-
-  // ─── ESP32 touch sensor (placeholder) ──────────────────────────────────
+  // ─── ESP32 Touch Sensor (simulated) ────────────────────────────────
   subscribeTouchSensor: (callback) => {
-    console.log("[HW] Touch sensor subscription started (placeholder)");
+    console.log("[HW] Touch sensor subscription (simulated)");
     return () => {};
   },
 
@@ -142,7 +76,12 @@ const HardwareAPI = {
     });
   },
 
-  // ─── Game event logging via REST ───────────────────────────────────────
+  // ─── Game event logging via REST ───────────────────────────────────
+  //
+  // If _gameSessionId exists, events go to that specific session.
+  // If not (backend was down when session was created), the backend
+  // falls back to the patient's latest session.
+  //
   logGameEvent: async (eventType, data = {}) => {
     if (!_patientId) {
       console.warn("[GAME] No patient — skipping event");
@@ -151,11 +90,15 @@ const HardwareAPI = {
 
     const payload = {
       patient_id: _patientId,
-      session_uuid: _sessionUuid,
       event_type: eventType,
       timestamp: new Date().toISOString(),
       ...data,
     };
+
+    // Attach session_id if we have one
+    if (_gameSessionId) {
+      payload.session_id = _gameSessionId;
+    }
 
     console.log(`[GAME] ${eventType}:`, payload);
 
@@ -169,23 +112,20 @@ const HardwareAPI = {
       if (!res.ok) console.error("[GAME] Server error:", body?.detail || res.status);
       return body;
     } catch (err) {
-      console.error("[GAME] Failed:", err.message);
+      console.error("[GAME] Backend unreachable — event logged locally only:", err.message);
       return null;
     }
   },
 
-  // ─── Generic event logger ──────────────────────────────────────────────
   logEvent: (eventType, data) => {
     console.log(`[LOG] ${eventType}:`, data);
   },
 
-  detectEmotion: async () => {
-    return _lastEmotionPacket;
-  },
-
-  calibrateBaseline: async () => {
-    return { success: true, baselineId: "baseline_" + Date.now() };
-  },
+  // ─── Camera (disabled in simulation) ───────────────────────────────
+  sendVideoFrame: () => {},
+  sendAudioChunk: () => {},
+  detectEmotion: async () => null,
+  calibrateBaseline: async () => ({ success: true }),
 };
 
 export default HardwareAPI;
