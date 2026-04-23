@@ -47,9 +47,9 @@ app = FastAPI()
 @app.on_event("startup")
 def on_startup():
     init_db()
-    print("✅ API started (models load on first WebSocket connection)")
+    print("✅ API started (models load on first emotion detection)")
 
-# Fixed: Only one CORS middleware (you had two, which causes errors)
+# Fixed: Only one CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -59,9 +59,7 @@ app.add_middleware(
 )
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
-# ------------------- MODEL LOADING (LAZY) -------------------
-# Models load ONLY on first WebSocket connection, not at startup
-# This prevents Railway timeouts during build
+# ------------------- MODEL LOADING (LAZY - ONLY ON FIRST USE) -------------------
 processor = None
 video_model = None
 vid_id2label = None
@@ -72,16 +70,17 @@ aud_id2label = None
 SILERO_VAD_MODEL = None
 get_speech_timestamps = None
 USE_SILERO_VAD = False
+models_loaded = False
 
 COMMON_EMOTIONS = ['neutral', 'happy', 'sad', 'angry', 'fear', 'surprise', 'disgust']
 
 def _load_models():
-    """Load all ML models on first WebSocket use (lazy loading)"""
+    """Load all ML models ONLY on first emotion detection"""
     global processor, video_model, vid_id2label, face_app
     global audio_extractor, audio_model, aud_id2label
-    global SILERO_VAD_MODEL, get_speech_timestamps, USE_SILERO_VAD
+    global SILERO_VAD_MODEL, get_speech_timestamps, USE_SILERO_VAD, models_loaded
     
-    if video_model is not None:
+    if models_loaded:
         return  # Already loaded
     
     print(f"🚀 Loading Clinical Models on {DEVICE}...")
@@ -119,6 +118,7 @@ def _load_models():
         USE_SILERO_VAD = False
         print("  ⚠️  Silero VAD not available, using RMS + spectral flatness fallback.")
     
+    models_loaded = True
     print("🚀 All models loaded!\n")
 
 
@@ -127,15 +127,10 @@ def _load_models():
 class EmotionEngine:
     def __init__(self):
         self.box_alpha = 0.7
-
-        # EMA smoothing replaces the old fixed-size deque buffer
         self.ema_alpha = 0.3
         self.ema_video_scores = None
         self.ema_audio_scores = None
-
-        # If top emotion is below this, report "neutral" instead
         self.confidence_threshold = 0.35
-
         self.audio_buffer_raw = np.array([], dtype=np.float32)
         self.last_bbox = None
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -186,6 +181,11 @@ class EmotionEngine:
     # ── Video ──
 
     def process_video(self, frame):
+        # LAZY LOAD: Load models on first video frame
+        global video_model, processor, face_app, vid_id2label
+        if video_model is None:
+            _load_models()
+        
         enhanced = self.enhance_image(frame)
 
         faces = face_app.get(enhanced)
@@ -266,6 +266,11 @@ class EmotionEngine:
             return flatness < 0.5
 
     def process_audio(self, raw_b64):
+        # LAZY LOAD: Load models on first audio chunk
+        global audio_model, audio_extractor, aud_id2label
+        if audio_model is None:
+            _load_models()
+        
         try:
             if "," in raw_b64:
                 raw_b64 = raw_b64.split(",")[-1]
@@ -294,8 +299,6 @@ class EmotionEngine:
                 logits = audio_model(**inputs).logits
                 probs = F.softmax(logits, dim=-1).cpu().numpy()[0]
 
-            # Map ehcalabres labels → common emotions
-            # ehcalabres: angry, calm, disgust, fearful, happy, neutral, sad, surprised
             scores = {k: 0.0 for k in COMMON_EMOTIONS}
             for i, p in enumerate(probs):
                 label = aud_id2label[i].lower()
@@ -580,7 +583,6 @@ def generate_report(session_id: int, db: Session = Depends(get_db)):
     if duration_secs == 0 and timeline:
         duration_secs = timeline[-1].seconds + 10
 
-    # Time-weighted emotion distribution
     emo_colors = {
         'happy': '#10b981', 'sad': '#3b82f6', 'angry': '#f43f5e',
         'fear': '#a855f7', 'surprise': '#f59e0b', 'neutral': '#94a3b8', 'disgust': '#f97316'
@@ -612,7 +614,6 @@ def generate_report(session_id: int, db: Session = Depends(get_db)):
             f'</tr>'
         )
 
-    # Key moments
     distress = {'fear', 'angry', 'sad'}
     key_moments = []
     seen = set()
@@ -645,7 +646,6 @@ def generate_report(session_id: int, db: Session = Depends(get_db)):
     else:
         moment_rows = '<tr><td colspan="3" style="color:#94a3b8;text-align:center;padding:12px">No significant moments detected</td></tr>'
 
-    # Notes section
     notes_html = ''
     if notes:
         items = ''.join([
@@ -891,14 +891,8 @@ async def _finalize_session(
     patient_id: int,
     session_db_id: int,
 ):
-    """
-    Runs entirely off the WebSocket event loop thread so the handler can return
-    immediately after the session ends. All blocking I/O (pydub, FFmpeg, DB) is
-    dispatched to the default thread-pool executor via asyncio.to_thread().
-    """
     print(f"💾 Finalizing session {session_id} in background...")
 
-    # ── 1. Audio export ──────────────────────────────────────────────────────
     has_audio = len(audio_data) > 0
     if has_audio:
         try:
@@ -910,7 +904,6 @@ async def _finalize_session(
             print(f"⚠️  Audio export error: {e}")
             has_audio = False
 
-    # ── 2. FFmpeg mux ────────────────────────────────────────────────────────
     try:
         if has_audio:
             command = [
@@ -938,7 +931,6 @@ async def _finalize_session(
         if temp_video_path.exists():
             await asyncio.to_thread(os.rename, temp_video_path, final_output_path)
 
-    # ── 3. Write JSON ────────────────────────────────────────────────────────
     duration_delta = int(time.time() - start_time)
     duration_str = f"{duration_delta // 60:02}:{duration_delta % 60:02}"
 
@@ -952,11 +944,9 @@ async def _finalize_session(
             }, f, indent=2)
     await asyncio.to_thread(_write_json)
 
-    # ── 4. Persist to database ───────────────────────────────────────────────
     def _save_to_db():
         db = SessionLocal()
         try:
-            # The session record was created at WS start — update it with final data
             record = db.query(SessionRecord).filter(SessionRecord.id == session_db_id).first()
             if record:
                 record.duration = duration_str
@@ -965,7 +955,6 @@ async def _finalize_session(
                 db.refresh(record)
                 record_id = record.id
             else:
-                # Fallback in case the initial record was lost
                 fallback = SessionRecord(
                     patient_id=patient_id, session_uuid=session_id,
                     duration=duration_str, video_url=f"/uploads/{session_id}.webm"
@@ -999,7 +988,7 @@ async def _finalize_session(
 
 @app.websocket("/ws/stream/{patient_id}")
 async def stream(ws: WebSocket, patient_id: int):
-    _load_models()  # Load models on first WebSocket connection (lazy)
+    # NO model loading here - models load on first frame/audio
     await ws.accept()
 
     engine_state = EmotionEngine()
@@ -1023,7 +1012,6 @@ async def stream(ws: WebSocket, patient_id: int):
     last_a_scores = None
     frame_count = 0
 
-    # Create the session record immediately so the client can attach notes mid-session
     def _create_initial_session():
         db = SessionLocal()
         try:
@@ -1107,9 +1095,6 @@ async def stream(ws: WebSocket, patient_id: int):
         print("Client disconnected.")
 
     finally:
-        # Release the video writer synchronously (fast — just flushes buffers),
-        # then hand everything else off to a background task so this handler
-        # returns without blocking the event loop.
         out.release()
         audio_data = audio_buffer.getvalue()
         asyncio.create_task(_finalize_session(
