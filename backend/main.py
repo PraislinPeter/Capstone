@@ -36,33 +36,6 @@ from database import SessionLocal, engine, Patient, SessionRecord, TimelineEntry
 # ------------------- CONFIGURATION -------------------
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║  UPGRADED MODELS (VERIFIED — these work with transformers API)   ║
-# ║                                                                  ║
-# ║  VIDEO: trpakov/vit-face-expression                              ║
-# ║    - ViT fine-tuned on FER2013 + MMI + AffectNet                 ║
-# ║    - Works with AutoImageProcessor + AutoModelForImageClassif.   ║
-# ║    - 7 emotions: angry, disgust, fear, happy, sad, surprise,     ║
-# ║      neutral                                                     ║
-# ║                                                                  ║
-# ║  NOTE on hsemotion/enet_b2_8:                                    ║
-# ║    That model does NOT work with AutoModelForImageClassification ║
-# ║    It requires `pip install hsemotion` and uses its own API:     ║
-# ║      from hsemotion.facial_emotions import HSEmotionRecognizer   ║
-# ║      fer = HSEmotionRecognizer('enet_b2_8', device='cpu')       ║
-# ║    If you want to use it, see the alternate block at the bottom  ║
-# ║    of this file. The trpakov model is a drop-in replacement.     ║
-# ║                                                                  ║
-# ║  AUDIO: ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition║
-# ║    - Wav2Vec2 fine-tuned on RAVDESS (82% accuracy)               ║
-# ║    - CRITICAL: Its AutoProcessor is broken. Use                  ║
-# ║      Wav2Vec2FeatureExtractor from the parent model instead.     ║
-# ║    - 8 emotions: angry, calm, disgust, fearful, happy, neutral,  ║
-# ║      sad, surprised                                              ║
-# ║                                                                  ║
-# ║  INSTALL (one time):                                             ║
-# ║    pip install timm                                              ║
-# ╚══════════════════════════════════════════════════════════════════╝
 EMOTION_MODEL = "trpakov/vit-face-expression"
 AUDIO_MODEL = "ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition"
 
@@ -74,6 +47,7 @@ app = FastAPI()
 @app.on_event("startup")
 def on_startup():
     init_db()
+    print("✅ API started (models load on first WebSocket connection)")
 
 # Fixed: Only one CORS middleware (you had two, which causes errors)
 app.add_middleware(
@@ -85,49 +59,67 @@ app.add_middleware(
 )
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
-# ------------------- MODEL LOADING -------------------
-print(f"🚀 Loading Clinical Models on {DEVICE}...")
-
-# 1. Vision Model
-processor = AutoImageProcessor.from_pretrained(EMOTION_MODEL)
-video_model = AutoModelForImageClassification.from_pretrained(EMOTION_MODEL).to(DEVICE).eval()
-vid_id2label = video_model.config.id2label
-
-# 2. Face Detection
-face_app = FaceAnalysis(
-    name="buffalo_l",
-    providers=["CUDAExecutionProvider" if DEVICE == "cuda" else "CPUExecutionProvider"]
-)
-face_app.prepare(ctx_id=0 if DEVICE == "cuda" else -1, det_size=(640, 640))
-
-# 3. Audio Model
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║  CRITICAL FIX: The ehcalabres model's AutoProcessor is broken.  ║
-# ║  Use Wav2Vec2FeatureExtractor from the parent model instead.    ║
-# ╚══════════════════════════════════════════════════════════════════╝
-audio_extractor = Wav2Vec2FeatureExtractor.from_pretrained("facebook/wav2vec2-large-xlsr-53")
-audio_model = AutoModelForAudioClassification.from_pretrained(AUDIO_MODEL).to(DEVICE).eval()
-aud_id2label = audio_model.config.id2label
-
-print(f"  ✅ Video labels: {vid_id2label}")
-print(f"  ✅ Audio labels: {aud_id2label}")
+# ------------------- MODEL LOADING (LAZY) -------------------
+# Models load ONLY on first WebSocket connection, not at startup
+# This prevents Railway timeouts during build
+processor = None
+video_model = None
+vid_id2label = None
+face_app = None
+audio_extractor = None
+audio_model = None
+aud_id2label = None
+SILERO_VAD_MODEL = None
+get_speech_timestamps = None
+USE_SILERO_VAD = False
 
 COMMON_EMOTIONS = ['neutral', 'happy', 'sad', 'angry', 'fear', 'surprise', 'disgust']
 
-# ------------------- OPTIONAL: SILERO VAD -------------------
-try:
-    SILERO_VAD_MODEL, silero_utils = torch.hub.load(
-        repo_or_dir='snakers4/silero-vad', model='silero_vad',
-        force_reload=False, onnx=False
+def _load_models():
+    """Load all ML models on first WebSocket use (lazy loading)"""
+    global processor, video_model, vid_id2label, face_app
+    global audio_extractor, audio_model, aud_id2label
+    global SILERO_VAD_MODEL, get_speech_timestamps, USE_SILERO_VAD
+    
+    if video_model is not None:
+        return  # Already loaded
+    
+    print(f"🚀 Loading Clinical Models on {DEVICE}...")
+    
+    # 1. Vision Model
+    processor = AutoImageProcessor.from_pretrained(EMOTION_MODEL)
+    video_model = AutoModelForImageClassification.from_pretrained(EMOTION_MODEL).to(DEVICE).eval()
+    vid_id2label = video_model.config.id2label
+    
+    # 2. Face Detection
+    face_app = FaceAnalysis(
+        name="buffalo_l",
+        providers=["CUDAExecutionProvider" if DEVICE == "cuda" else "CPUExecutionProvider"]
     )
-    get_speech_timestamps = silero_utils[0]
-    USE_SILERO_VAD = True
-    print("  ✅ Silero VAD loaded.")
-except Exception:
-    USE_SILERO_VAD = False
-    print("  ⚠️  Silero VAD not available, using RMS + spectral flatness fallback.")
-
-print("🚀 All models loaded!\n")
+    face_app.prepare(ctx_id=0 if DEVICE == "cuda" else -1, det_size=(640, 640))
+    
+    # 3. Audio Model
+    audio_extractor = Wav2Vec2FeatureExtractor.from_pretrained("facebook/wav2vec2-large-xlsr-53")
+    audio_model = AutoModelForAudioClassification.from_pretrained(AUDIO_MODEL).to(DEVICE).eval()
+    aud_id2label = audio_model.config.id2label
+    
+    print(f"  ✅ Video labels: {vid_id2label}")
+    print(f"  ✅ Audio labels: {aud_id2label}")
+    
+    # 4. Optional: Silero VAD
+    try:
+        SILERO_VAD_MODEL, silero_utils = torch.hub.load(
+            repo_or_dir='snakers4/silero-vad', model='silero_vad',
+            force_reload=False, onnx=False
+        )
+        get_speech_timestamps = silero_utils[0]
+        USE_SILERO_VAD = True
+        print("  ✅ Silero VAD loaded.")
+    except Exception:
+        USE_SILERO_VAD = False
+        print("  ⚠️  Silero VAD not available, using RMS + spectral flatness fallback.")
+    
+    print("🚀 All models loaded!\n")
 
 
 # ------------------- PRODUCTION ENGINE CLASS -------------------
@@ -1007,6 +999,7 @@ async def _finalize_session(
 
 @app.websocket("/ws/stream/{patient_id}")
 async def stream(ws: WebSocket, patient_id: int):
+    _load_models()  # Load models on first WebSocket connection (lazy)
     await ws.accept()
 
     engine_state = EmotionEngine()
