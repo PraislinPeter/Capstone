@@ -5,3 +5,8 @@ __pycache__/
 *.dll
 *.pyd
 *.so
+
+# Session recordings
+backend/uploads/*.webm
+backend/uploads/*.mp4
+backend/uploads/session_*.json
