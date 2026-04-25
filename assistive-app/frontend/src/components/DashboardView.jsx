@@ -13,7 +13,8 @@ import {
   UserPlus, 
   Users, 
   LogOut,
-  Radio
+  Radio,
+  Sparkles
 } from 'lucide-react';
 
 // --- Utility: Emotion Styling ---
@@ -71,7 +72,7 @@ export default function DashboardView() {
     setSessionStatus("waiting");
     setLiveImage(null);
 
-    // Connect as THERAPIST
+    // Connect as THERAPIST (Localhost for local development)
     ws.current = new WebSocket(`ws://localhost:8000/ws/stream/${patient.id}/therapist`);
 
     ws.current.onopen = () => {
@@ -89,6 +90,20 @@ export default function DashboardView() {
       if (response.event === "session_started") {
         setLiveSessionId(response.session_db_id);
         setSessionStatus("live");
+        return;
+      }
+
+      // --- SENSORY INTERACTION LOGIC ---
+      if (response.event === "texture_tapped") {
+        setTimeline(prev => [
+          ...prev, 
+          { 
+            time: response.timestamp, 
+            emotion: `Touched ${response.texture_name}`, 
+            isInteraction: true, // Flag to style as sensory event
+            confidence: 1.0 
+          }
+        ]);
         return;
       }
 
@@ -115,6 +130,7 @@ export default function DashboardView() {
 
         setTimeline(prev => {
           const lastEntry = prev[prev.length - 1];
+          // Allow sensory interactions but filter duplicate AI emotion shifts
           if (!lastEntry || lastEntry.emotion !== response.emotion) {
             return [...prev, { time: response.timestamp, emotion: response.emotion, confidence }];
           }
@@ -339,17 +355,28 @@ export default function DashboardView() {
               </div>
             )}
             {timeline.map((entry, i) => {
-              const style = getEmotionStyle(entry.emotion);
+              // Decide style: Sensory interactions use Indigo theme, Emotions use original map
+              const isInt = entry.isInteraction;
+              const style = isInt 
+                ? { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700' }
+                : getEmotionStyle(entry.emotion);
+
               return (
-                <div key={i} className={`p-3 rounded-xl border-l-4 transition-all ${style.bg} ${style.border} border-l-current`}>
+                <div key={i} className={`p-3 rounded-xl border-l-4 transition-all ${style.bg} ${style.border} ${isInt ? 'border-l-indigo-500' : 'border-l-current'}`}>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-[9px] font-black font-mono text-slate-400 uppercase">
                       {entry.time}
                     </span>
-                    {entry.confidence != null && (
-                      <span className={`text-[9px] font-bold ${style.text} opacity-60`}>
-                        {Math.round(entry.confidence * 100)}%
+                    {isInt ? (
+                      <span className="text-[8px] bg-indigo-600 text-white px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-1">
+                        <Sparkles size={8} /> Sensory
                       </span>
+                    ) : (
+                      entry.confidence != null && (
+                        <span className={`text-[9px] font-bold ${style.text} opacity-60`}>
+                          {Math.round(entry.confidence * 100)}%
+                        </span>
+                      )
                     )}
                   </div>
                   <p className={`text-sm font-bold capitalize ${style.text}`}>{entry.emotion}</p>

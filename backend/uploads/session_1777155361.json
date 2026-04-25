@@ -1,0 +1,70 @@
+{
+  "session_id": "session_1777155361",
+  "date": "2026-04-26 02:17",
+  "duration": "01:12",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:09",
+      "seconds": 9,
+      "emotion": "Touched None",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:09",
+      "seconds": 9,
+      "emotion": "neutral",
+      "confidence": 0.7322189533057268
+    },
+    {
+      "time": "00:16",
+      "seconds": 16,
+      "emotion": "Touched None",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:16",
+      "seconds": 16,
+      "emotion": "neutral",
+      "confidence": 0.9557850210264733
+    },
+    {
+      "time": "00:47",
+      "seconds": 47,
+      "emotion": "Touched None",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:47",
+      "seconds": 47,
+      "emotion": "neutral",
+      "confidence": 0.9886313477709254
+    },
+    {
+      "time": "00:55",
+      "seconds": 55,
+      "emotion": "happy",
+      "confidence": 0.6361440409374263
+    },
+    {
+      "time": "01:01",
+      "seconds": 61,
+      "emotion": "neutral",
+      "confidence": 0.5839939544184383
+    },
+    {
+      "time": "01:06",
+      "seconds": 66,
+      "emotion": "happy",
+      "confidence": 0.5780560166180854
+    }
+  ]
+}

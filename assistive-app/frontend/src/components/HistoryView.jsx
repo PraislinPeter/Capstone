@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Play, Clock, Calendar, ChevronRight, Film,
   BarChart3, ArrowLeft, Download, TrendingUp, ListVideo,
-  FileText, MessageSquare, Plus, Trash2, AlertTriangle, CheckCircle
+  FileText, MessageSquare, Plus, Trash2, AlertTriangle, CheckCircle, Sparkles
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -226,14 +226,34 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
 
   const totalSecs = parseSeconds(duration) || parseSeconds(timeline?.[timeline.length - 1]?.time) + 5;
 
-  // Time-weighted emotion totals
+  // 1. Calculate sensory correlations: Texture -> Following Emotion
+  const sensoryEvents = (timeline || []).filter(e => e.is_interaction || e.emotion?.toLowerCase().includes('touched'));
+  
+  const correlations = sensoryEvents.map(event => {
+    const startTime = parseSeconds(event.time);
+    const endTime = startTime + 5; // Look at the 5 seconds following the touch
+    
+    // Find the emotion shifts that happened in this 5-second window
+    const reactions = (timeline || []).filter(e => {
+      const t = parseSeconds(e.time);
+      return t >= startTime && t <= endTime && !e.is_interaction;
+    });
+
+    return {
+      texture: event.emotion.replace('Touched ', ''),
+      time: event.time,
+      reaction: reactions.length > 0 ? reactions[reactions.length - 1].emotion : 'Neutral'
+    };
+  });
+
+  // 2. Logic for Tabs and Data (Donut/Trend)
   const timeTotals = {};
   (timeline || []).forEach((entry, i) => {
     const start = parseSeconds(entry.time);
     const end = i < timeline.length - 1 ? parseSeconds(timeline[i + 1].time) : totalSecs;
     const dur = Math.max(0, end - start);
     const emo = entry.emotion?.toLowerCase() || 'neutral';
-    timeTotals[emo] = (timeTotals[emo] || 0) + dur;
+    if (!entry.is_interaction) timeTotals[emo] = (timeTotals[emo] || 0) + dur;
   });
 
   const donutData = Object.entries(timeTotals)
@@ -242,8 +262,7 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
       name: emo,
       value: Math.round((secs / totalSecs) * 100),
       fill: getHex(emo),
-    }))
-    .sort((a, b) => b.value - a.value);
+    })).sort((a, b) => b.value - a.value);
 
   const dominant = donutData[0];
 
@@ -251,6 +270,7 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
     ? sessions.slice().reverse().map((s) => {
         const counts = {};
         (s.timeline || []).forEach((e) => {
+          if (e.is_interaction) return;
           const emo = e.emotion?.toLowerCase() || 'neutral';
           counts[emo] = (counts[emo] || 0) + 1;
         });
@@ -261,48 +281,41 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
       })
     : null;
 
-  // Timeline strip segments
-  const segments = (timeline || []).map((entry, i) => {
-    const start = parseSeconds(entry.time);
-    const end = i < timeline.length - 1 ? parseSeconds(timeline[i + 1].time) : totalSecs;
-    return { ...entry, width: ((end - start) / totalSecs) * 100 };
-  });
-
   const tabs = [
     { id: 'distribution', label: 'Distribution', icon: <BarChart3 size={12} /> },
-    { id: 'notes',        label: 'Notes',         icon: <MessageSquare size={12} /> },
-    { id: 'log',          label: 'Event Log',     icon: <ListVideo size={12} /> },
+    { id: 'sensory',      label: 'Sensory Link', icon: <Sparkles size={12} /> },
+    { id: 'notes',        label: 'Notes',        icon: <MessageSquare size={12} /> },
+    { id: 'log',          label: 'Event Log',    icon: <ListVideo size={12} /> },
     ...(trendData ? [{ id: 'trend', label: 'Trend', icon: <TrendingUp size={12} /> }] : []),
   ];
 
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      {/* Timeline strip — always visible at top */}
+      {/* Visual Timeline Strip */}
       <div className="p-4 border-b border-slate-100 shrink-0">
         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Session Timeline</p>
         <div className="flex w-full h-5 rounded-lg overflow-hidden border border-slate-100 cursor-pointer">
-          {segments.map((seg, i) => (
-            <div
-              key={i}
-              title={`${seg.time} — ${seg.emotion}`}
-              onClick={() => onSeek(seg.time)}
-              className={`h-full hover:opacity-75 transition-opacity ${getEmotionStyle(seg.emotion).color}`}
-              style={{ width: `${seg.width}%`, minWidth: '2px' }}
-            />
-          ))}
+          {timeline?.map((seg, i) => {
+            const start = parseSeconds(seg.time);
+            const nextEntry = timeline[i + 1];
+            const end = nextEntry ? parseSeconds(nextEntry.time) : totalSecs;
+            const width = Math.max(1, ((end - start) / totalSecs) * 100);
+            
+            return (
+              <div
+                key={i}
+                onClick={() => onSeek(seg.time)}
+                className={`h-full hover:opacity-75 transition-opacity ${
+                  seg.is_interaction ? 'bg-indigo-600' : getEmotionStyle(seg.emotion).color
+                }`}
+                style={{ width: `${width}%`, minWidth: '2px' }}
+              />
+            );
+          })}
         </div>
         <div className="flex justify-between text-[9px] text-slate-400 font-mono mt-1">
           <span>0:00</span>
           <span>{duration}</span>
-        </div>
-        {/* Legend */}
-        <div className="flex flex-wrap gap-2 mt-2">
-          {Object.entries(EMOTION_MAP).map(([emo, s]) => (
-            <div key={emo} className="flex items-center gap-1">
-              <div className={`w-2 h-2 rounded-full ${s.color}`} />
-              <span className="text-[9px] capitalize text-slate-400">{emo}</span>
-            </div>
-          ))}
         </div>
       </div>
 
@@ -313,9 +326,7 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
-              tab === t.id
-                ? 'bg-indigo-600 text-white'
-                : 'text-slate-500 hover:bg-slate-100'
+              tab === t.id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'
             }`}
           >
             {t.icon}{t.label}
@@ -323,11 +334,12 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
         ))}
       </div>
 
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
-
+      {/* Tab Content */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+        
+        {/* TAB: DISTRIBUTION */}
         {tab === 'distribution' && (
-          <>
+          <div className="space-y-4">
             {dominant && (
               <div className={`px-3 py-2 rounded-xl text-[11px] font-bold ${getEmotionStyle(dominant.name).bg} ${getEmotionStyle(dominant.name).text}`}>
                 Dominant: <span className="capitalize">{dominant.name}</span> — {dominant.value}% of session
@@ -338,7 +350,7 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={donutData} dataKey="value" innerRadius="50%" outerRadius="78%" paddingAngle={2} startAngle={90} endAngle={-270} />
-                    <ReTooltip formatter={(v, n) => [`${v}%`, n]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                    <ReTooltip formatter={(v, n) => [`${v}%`, n]} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -352,9 +364,50 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
                 ))}
               </div>
             </div>
-          </>
+          </div>
         )}
 
+        {/* TAB: SENSORY LINK (The New Correlation Table) */}
+        {tab === 'sensory' && (
+          <div className="space-y-4">
+            <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl flex items-start gap-2">
+              <Sparkles size={14} className="text-indigo-500 shrink-0 mt-0.5" />
+              <p className="text-[10px] text-indigo-700 font-medium leading-relaxed">
+                This table links physical interactions (textures) to the patient's immediate emotional response.
+              </p>
+            </div>
+            <div className="border rounded-xl overflow-hidden border-slate-100">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <th className="py-2 px-3 text-[10px] font-bold text-slate-400 uppercase">Texture</th>
+                    <th className="py-2 px-3 text-[10px] font-bold text-slate-400 uppercase">Time</th>
+                    <th className="py-2 px-3 text-[10px] font-bold text-slate-400 uppercase">Response</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {correlations.length > 0 ? correlations.map((c, i) => (
+                    <tr key={i} className="border-b border-slate-50 group hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => onSeek(c.time)}>
+                      <td className="py-3 px-3 text-xs font-bold text-slate-700">{c.texture}</td>
+                      <td className="py-3 px-3 text-xs font-mono text-slate-400 group-hover:text-indigo-600">{c.time}</td>
+                      <td className="py-3 px-3">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${getEmotionStyle(c.reaction).bg} ${getEmotionStyle(c.reaction).text}`}>
+                          {c.reaction}
+                        </span>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan="3" className="py-10 text-center text-slate-300 text-xs italic">No interactions recorded.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: NOTES */}
         {tab === 'notes' && (
           <NotesTab
             sessionDbId={session.id}
@@ -366,44 +419,41 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
           />
         )}
 
+        {/* TAB: EVENT LOG */}
         {tab === 'log' && (
           <div className="space-y-2">
-            {timeline?.length > 0 ? timeline.map((event, idx) => {
-              const style = getEmotionStyle(event.emotion);
+            {timeline?.map((event, idx) => {
+              const isInt = event.is_interaction;
+              const style = isInt 
+                ? { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' }
+                : getEmotionStyle(event.emotion);
               return (
                 <button
                   key={idx}
                   onClick={() => onSeek(event.time)}
-                  className="group flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 w-full hover:bg-white hover:shadow-sm hover:border-indigo-100 transition-all text-left"
+                  className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 w-full hover:bg-white hover:border-indigo-200 transition-all text-left group"
                 >
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${style.bg} ${style.text}`}>
-                    <Play size={12} fill="currentColor" />
+                    {isInt ? <Sparkles size={12} /> : <Play size={12} fill="currentColor" />}
                   </div>
                   <span className="font-mono text-xs font-bold text-slate-400 group-hover:text-indigo-500">{event.time}</span>
-                  <div className={`ml-auto px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${style.bg} ${style.text} ${style.border} border`}>
+                  <div className={`ml-auto px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${style.bg} ${style.text} ${style.border}`}>
                     {event.emotion}
                   </div>
                 </button>
               );
-            }) : (
-              <p className="text-center text-slate-400 text-sm py-8">No events logged.</p>
-            )}
+            })}
           </div>
         )}
 
+        {/* TAB: TREND */}
         {tab === 'trend' && trendData && (
-          <>
+          <div className="space-y-4">
             {trendInsights?.length > 0 && (
-              <div className="space-y-2 mb-4">
+              <div className="space-y-2">
                 {trendInsights.map((insight, i) => (
-                  <div key={i} className={`flex items-start gap-2 p-3 rounded-xl text-xs font-medium ${
-                    insight.type === 'warning'
-                      ? 'bg-amber-50 border border-amber-100 text-amber-800'
-                      : 'bg-emerald-50 border border-emerald-100 text-emerald-800'
-                  }`}>
-                    {insight.type === 'warning'
-                      ? <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                      : <CheckCircle size={14} className="shrink-0 mt-0.5" />}
+                  <div key={i} className={`flex items-start gap-2 p-3 rounded-xl text-xs font-medium ${insight.type === 'warning' ? 'bg-amber-50 border-amber-100 text-amber-800' : 'bg-emerald-50 border-emerald-100 text-emerald-800'}`}>
+                    {insight.type === 'warning' ? <AlertTriangle size={14} className="shrink-0 mt-0.5" /> : <CheckCircle size={14} className="shrink-0 mt-0.5" />}
                     {insight.message}
                   </div>
                 ))}
@@ -414,19 +464,17 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
                 <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickLine={false} axisLine={false} unit="%" />
-                <ReTooltip formatter={(v, n) => [`${v}%`, n]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                <ReTooltip formatter={(v, n) => [`${v}%`, n]} />
                 <Legend wrapperStyle={{ fontSize: 9, paddingTop: 6 }} />
                 {EMOTIONS.map(emo => <Bar key={emo} dataKey={emo} stackId="a" fill={getHex(emo)} />)}
               </BarChart>
             </ResponsiveContainer>
-            <p className="text-[10px] text-slate-400">Each bar = 100% of detected states for that session.</p>
-          </>
+          </div>
         )}
       </div>
     </div>
   );
 }
-
 // ── Main ────────────────────────────────────────────────────────────────────
 export default function HistoryView({ patient: propPatient }) {
   const navigate = useNavigate();

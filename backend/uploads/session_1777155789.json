@@ -1,0 +1,123 @@
+{
+  "session_id": "session_1777155789",
+  "date": "2026-04-26 02:23",
+  "duration": "00:39",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:12",
+      "seconds": 12,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:12",
+      "seconds": 12,
+      "emotion": "neutral",
+      "confidence": 0.9827465044802477
+    },
+    {
+      "time": "00:13",
+      "seconds": 13,
+      "emotion": "Touched Velvet",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:13",
+      "seconds": 13,
+      "emotion": "neutral",
+      "confidence": 0.9836085622550325
+    },
+    {
+      "time": "00:21",
+      "seconds": 21,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:21",
+      "seconds": 21,
+      "emotion": "neutral",
+      "confidence": 0.9750840488816684
+    },
+    {
+      "time": "00:22",
+      "seconds": 22,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:22",
+      "seconds": 22,
+      "emotion": "neutral",
+      "confidence": 0.9750560836828666
+    },
+    {
+      "time": "00:22",
+      "seconds": 22,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:22",
+      "seconds": 22,
+      "emotion": "neutral",
+      "confidence": 0.977513064134707
+    },
+    {
+      "time": "00:22",
+      "seconds": 22,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:22",
+      "seconds": 22,
+      "emotion": "neutral",
+      "confidence": 0.9784888134418801
+    },
+    {
+      "time": "00:23",
+      "seconds": 23,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:23",
+      "seconds": 23,
+      "emotion": "neutral",
+      "confidence": 0.9784888134418801
+    },
+    {
+      "time": "00:23",
+      "seconds": 23,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:23",
+      "seconds": 23,
+      "emotion": "neutral",
+      "confidence": 0.9726596129010819
+    },
+    {
+      "time": "00:38",
+      "seconds": 38,
+      "emotion": "happy",
+      "confidence": 0.6013290339056785
+    }
+  ]
+}
