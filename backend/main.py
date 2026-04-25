@@ -985,120 +985,227 @@ async def _finalize_session(
 
 
 # ------------------- WEBSOCKET STREAM -------------------
+@app.websocket("/ws/stream/{patient_id}/{role}")
+async def stream(ws: WebSocket, patient_id: int, role: str):
+    # Enforce valid roles
+    if role not in ["child", "therapist"]:
+        await ws.close(code=1008, reason="Invalid role. Must be 'child' or 'therapist'.")
+        return
 
-@app.websocket("/ws/stream/{patient_id}")
-async def stream(ws: WebSocket, patient_id: int):
-    # NO model loading here - models load on first frame/audio
-    await ws.accept()
+    # Add the connection to our session manager
+    await manager.connect(ws, patient_id, role)
 
-    engine_state = EmotionEngine()
+    # =================================================================
+    # 1. CHILD INITIALIZATION (Only the child creates a session/recording)
+    # =================================================================
+    if role == "child":
+        engine_state = EmotionEngine()
 
-    timestamp_id = int(time.time())
-    session_id = f"session_{timestamp_id}"
+        timestamp_id = int(time.time())
+        session_id = f"session_{timestamp_id}"
 
-    temp_video_path = UPLOAD_DIR / f"temp_vid_{timestamp_id}.webm"
-    temp_audio_path = UPLOAD_DIR / f"temp_aud_{timestamp_id}.wav"
-    final_output_path = UPLOAD_DIR / f"{session_id}.webm"
-    json_path = UPLOAD_DIR / f"{session_id}.json"
+        temp_video_path = UPLOAD_DIR / f"temp_vid_{timestamp_id}.webm"
+        temp_audio_path = UPLOAD_DIR / f"temp_aud_{timestamp_id}.wav"
+        final_output_path = UPLOAD_DIR / f"{session_id}.webm"
+        json_path = UPLOAD_DIR / f"{session_id}.json"
 
-    fourcc = cv2.VideoWriter_fourcc(*'vp80')
-    out = cv2.VideoWriter(str(temp_video_path), fourcc, 5.0, (640, 480))
-    audio_buffer = io.BytesIO()
+        fourcc = cv2.VideoWriter_fourcc(*'vp80')
+        out = cv2.VideoWriter(str(temp_video_path), fourcc, 5.0, (640, 480))
+        audio_buffer = io.BytesIO()
 
-    start_time = time.time()
-    session_timeline = []
+        start_time = time.time()
+        session_timeline = []
 
-    last_v_scores = None
-    last_a_scores = None
-    frame_count = 0
+        last_v_scores = None
+        last_a_scores = None
+        frame_count = 0
 
-    def _create_initial_session():
-        db = SessionLocal()
-        try:
-            rec = SessionRecord(
-                patient_id=patient_id, session_uuid=session_id,
-                duration="00:00", video_url=""
-            )
-            db.add(rec)
-            db.commit()
-            db.refresh(rec)
-            return rec.id
-        except Exception as e:
-            db.rollback()
-            print(f"DB Error creating initial session: {e}")
-            return None
-        finally:
-            db.close()
+        # Create DB record
+        def _create_initial_session():
+            db = SessionLocal()
+            try:
+                rec = SessionRecord(
+                    patient_id=patient_id, session_uuid=session_id,
+                    duration="00:00", video_url=""
+                )
+                db.add(rec)
+                db.commit()
+                db.refresh(rec)
+                return rec.id
+            except Exception as e:
+                db.rollback()
+                print(f"DB Error creating initial session: {e}")
+                return None
+            finally:
+                db.close()
 
-    session_db_id = await asyncio.to_thread(_create_initial_session)
-    if session_db_id:
-        await ws.send_json({"status": "session_started", "session_db_id": session_db_id})
+        session_db_id = await asyncio.to_thread(_create_initial_session)
+        
+        if session_db_id:
+            # Send confirmation to child
+            await ws.send_json({"status": "session_started", "session_db_id": session_db_id})
+            
+            # Notify any already-connected therapists that recording started
+            await manager.broadcast_to_therapists(patient_id, {
+                "event": "session_started", 
+                "session_id": session_id,
+                "session_db_id": session_db_id,
+                "patient_id": patient_id
+            })
 
+    # =================================================================
+    # 2. MAIN WEBSOCKET LOOP
+    # =================================================================
     try:
         while True:
             data = await ws.receive_json()
 
-            if data.get("event") == "stop":
-                await ws.send_json({"status": "finished"})
-                break
+            # --- CHILD LOGIC: Receiving data from webcam/mic ---
+            if role == "child":
+                if data.get("event") == "stop":
+                    await ws.send_json({"status": "finished"})
+                    await manager.broadcast_to_therapists(patient_id, {"event": "session_ended"})
+                    break
 
-            if "image" in data:
-                img_bytes = base64.b64decode(data["image"].split(",")[-1])
-                frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
-                if frame is not None:
-                    resized = cv2.resize(frame, (640, 480))
-                    out.write(resized)
-                    frame_count += 1
+                # Process Image
+                if "image" in data:
+                    img_bytes = base64.b64decode(data["image"].split(",")[-1])
+                    frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        resized = cv2.resize(frame, (640, 480))
+                        out.write(resized)
+                        frame_count += 1
 
-                    if frame_count % 3 == 0:
-                        v_res = await asyncio.to_thread(engine_state.process_video, resized)
-                        if v_res:
-                            last_v_scores = v_res
+                        # Run video ML every 3rd frame
+                        if frame_count % 3 == 0:
+                            v_res = await asyncio.to_thread(engine_state.process_video, resized)
+                            if v_res:
+                                last_v_scores = v_res
 
-            if data.get("audio"):
-                raw_audio = data["audio"]
-                try:
-                    audio_bytes = base64.b64decode(raw_audio.split(",")[-1])
-                    audio_buffer.write(audio_bytes)
-                    a_res = await asyncio.to_thread(engine_state.process_audio, raw_audio)
-                    if a_res:
-                        last_a_scores = a_res
-                except Exception:
-                    pass
+                # Process Audio
+                if data.get("audio"):
+                    raw_audio = data["audio"]
+                    try:
+                        audio_bytes = base64.b64decode(raw_audio.split(",")[-1])
+                        audio_buffer.write(audio_bytes)
+                        a_res = await asyncio.to_thread(engine_state.process_audio, raw_audio)
+                        if a_res:
+                            last_a_scores = a_res
+                    except Exception:
+                        pass
 
-            final_emotion, final_scores = engine_state.fusion(last_v_scores, last_a_scores)
+                # Emotion Fusion
+                final_emotion, final_scores = engine_state.fusion(last_v_scores, last_a_scores)
 
-            elapsed = int(time.time() - start_time)
-            timestamp = f"{elapsed // 60:02}:{elapsed % 60:02}"
+                # Timeline Logging
+                elapsed = int(time.time() - start_time)
+                timestamp = f"{elapsed // 60:02}:{elapsed % 60:02}"
 
-            should_log = False
-            if not session_timeline:
-                should_log = True
-            elif session_timeline[-1]['emotion'] != final_emotion:
-                should_log = True
-            elif (elapsed - session_timeline[-1]['seconds']) > 2:
-                should_log = True
+                should_log = False
+                if not session_timeline:
+                    should_log = True
+                elif session_timeline[-1]['emotion'] != final_emotion:
+                    should_log = True
+                elif (elapsed - session_timeline[-1]['seconds']) > 2:
+                    should_log = True
 
-            if should_log:
-                session_timeline.append({
-                    "time": timestamp, "seconds": elapsed,
-                    "emotion": final_emotion,
-                    "confidence": float(final_scores.get(final_emotion, 0))
+                if should_log:
+                    session_timeline.append({
+                        "time": timestamp, "seconds": elapsed,
+                        "emotion": final_emotion,
+                        "confidence": float(final_scores.get(final_emotion, 0))
+                    })
+
+                # A. Feedback to Child Dashboard
+                await ws.send_json({
+                    "status": "processing", 
+                    "timestamp": timestamp,
+                    "emotion": final_emotion, 
+                    "scores": final_scores
                 })
 
-            await ws.send_json({
-                "status": "processing", "timestamp": timestamp,
-                "emotion": final_emotion, "scores": final_scores
-            })
+                # B. RELAY TO THERAPIST DASHBOARD
+                # This forwards the raw image/audio and the ML results in real-time
+                await manager.broadcast_to_therapists(patient_id, {
+                    "event": "live_stream",
+                    "image": data.get("image"),       
+                    "audio": data.get("audio"),       
+                    "emotion": final_emotion,
+                    "scores": final_scores,
+                    "timestamp": timestamp
+                })
+
+            # --- THERAPIST LOGIC: Handling commands from the therapist ---
+            elif role == "therapist":
+                # Therapists mostly just listen to the broadcasts.
+                # However, if the therapist UI sends a ping or a command (like triggering a game on the child's screen), you handle it here.
+                if data.get("event") == "ping":
+                    await ws.send_json({"status": "pong"})
+                
+                # Example: If therapist clicks a button to alert the child
+                # if data.get("event") == "send_alert_to_child":
+                #     child_ws = manager.active_sessions[patient_id].get("child")
+                #     if child_ws:
+                #         await child_ws.send_json({"event": "alert", "message": data.get("message")})
 
     except WebSocketDisconnect:
-        print("Client disconnected.")
+        print(f"Client disconnected. Role: {role}, Patient ID: {patient_id}")
+        manager.disconnect(ws, patient_id, role)
 
+    # =================================================================
+    # 3. CLEANUP & FINALIZATION
+    # =================================================================
     finally:
-        out.release()
-        audio_data = audio_buffer.getvalue()
-        asyncio.create_task(_finalize_session(
-            session_id, temp_video_path, temp_audio_path, final_output_path,
-            json_path, audio_data, start_time, session_timeline, patient_id,
-            session_db_id or 0
-        ))
+        # We only run the heavy DB finalization and FFMpeg rendering if the child drops connection
+        if role == "child":
+            try:
+                out.release()
+            except Exception:
+                pass
+                
+            audio_data = audio_buffer.getvalue()
+            
+            # Trigger background DB and FFMPEG save (using your existing _finalize_session func)
+            asyncio.create_task(_finalize_session(
+                session_id, temp_video_path, temp_audio_path, final_output_path,
+                json_path, audio_data, start_time, session_timeline, patient_id,
+                session_db_id or 0
+            ))
+            
+            # Notify therapists that the stream disconnected
+            asyncio.create_task(manager.broadcast_to_therapists(patient_id, {"event": "stream_disconnected"}))
+
+class SessionManager:
+    def __init__(self):
+        # Maps patient_id -> {"child": WebSocket, "therapists": [WebSocket, ...]}
+        self.active_sessions = {}
+
+    async def connect(self, websocket: WebSocket, patient_id: int, role: str):
+        await websocket.accept()
+        if patient_id not in self.active_sessions:
+            self.active_sessions[patient_id] = {"child": None, "therapists": []}
+            
+        if role == "child":
+            # If a child connects, replace the existing child connection
+            self.active_sessions[patient_id]["child"] = websocket
+        elif role == "therapist":
+            self.active_sessions[patient_id]["therapists"].append(websocket)
+
+    def disconnect(self, websocket: WebSocket, patient_id: int, role: str):
+        if patient_id in self.active_sessions:
+            if role == "child":
+                self.active_sessions[patient_id]["child"] = None
+            elif role == "therapist":
+                if websocket in self.active_sessions[patient_id]["therapists"]:
+                    self.active_sessions[patient_id]["therapists"].remove(websocket)
+
+    async def broadcast_to_therapists(self, patient_id: int, message: dict):
+        """Send data (video frames + ML results) to the therapist dashboard."""
+        if patient_id in self.active_sessions:
+            for therapist_ws in self.active_sessions[patient_id]["therapists"]:
+                try:
+                    await therapist_ws.send_json(message)
+                except Exception:
+                    pass # Handle disconnected therapists
+
+manager = SessionManager()

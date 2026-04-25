@@ -1,0 +1,126 @@
+:root {
+  --primary: #4f46e5;
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --text: #1e293b;
+}
+
+body {
+  font-family: -apple-system, 'Segoe UI', Arial, sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+  margin: 0;
+  min-height: 100vh;
+}
+
+.dashboard-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.dashboard {
+  background: var(--surface);
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  width: 100%;
+  max-width: 800px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 1rem;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.patient-id {
+  font-weight: bold;
+  color: var(--primary);
+}
+
+.video-container {
+  width: 100%;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  aspect-ratio: 4/3;
+}
+
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1); /* Mirror effect */
+}
+
+.controls {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  justify-content: center;
+}
+
+.btn {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-start { background: #10b981; color: white; }
+.btn-stop { background: #f43f5e; color: white; }
+
+.status-bar {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f1f5f9;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+}
+
+.status-indicator-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.status-indicator.active {
+  background: #10b981;
+}
+
+.timer span {
+  font-family: monospace;
+  font-size: 1.1em;
+}

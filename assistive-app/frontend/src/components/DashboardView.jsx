@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { useNavigate, useLocation, useParams, BrowserRouter, Routes, Route } from 'react-router-dom';
 import {
   Clock,
   Circle,
@@ -8,11 +8,12 @@ import {
   Video,
   AlertCircle,
   ArrowLeft,
-  Wifi,
-  WifiOff,
-  Sun,
-  Moon,
   Plus,
+  BrainCircuit, 
+  UserPlus, 
+  Users, 
+  LogOut,
+  Radio
 } from 'lucide-react';
 
 // --- Utility: Emotion Styling ---
@@ -28,45 +29,6 @@ const EMOTION_MAP = {
 
 const getEmotionStyle = (emo) => EMOTION_MAP[emo?.toLowerCase()] || EMOTION_MAP.neutral;
 
-// ╔══════════════════════════════════════════════════════════════════════╗
-// ║  CHANGE 1: IMAGE QUALITY ANALYZER                                    ║
-// ║  Checks brightness/contrast of each frame before sending.            ║
-// ║  Warns the user if lighting is bad (which kills accuracy).           ║
-// ╚══════════════════════════════════════════════════════════════════════╝
-function analyzeFrameQuality(canvas) {
-  const ctx = canvas.getContext('2d');
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-  
-  let totalBrightness = 0;
-  let pixelCount = 0;
-  const brightnessValues = [];
-
-  // Sample every 16th pixel for speed
-  for (let i = 0; i < data.length; i += 64) { // 4 channels * 16 skip
-    const r = data[i], g = data[i + 1], b = data[i + 2];
-    const brightness = (0.299 * r + 0.587 * g + 0.114 * b); // Perceived luminance
-    totalBrightness += brightness;
-    brightnessValues.push(brightness);
-    pixelCount++;
-  }
-
-  const avgBrightness = totalBrightness / pixelCount;
-
-  // Contrast: standard deviation of brightness
-  const variance = brightnessValues.reduce((sum, val) => sum + (val - avgBrightness) ** 2, 0) / pixelCount;
-  const contrast = Math.sqrt(variance);
-
-  return {
-    brightness: avgBrightness,       // 0-255, ideal: 80-180
-    contrast,                        // 0-128, ideal: > 40
-    isTooLight: avgBrightness > 200,
-    isTooDark: avgBrightness < 50,
-    isLowContrast: contrast < 30,
-    quality: avgBrightness > 50 && avgBrightness < 200 && contrast > 30 ? 'good' : 'poor'
-  };
-}
-
 export default function DashboardView() {
   // --- Router ---
   const navigate = useNavigate();
@@ -75,29 +37,15 @@ export default function DashboardView() {
   const patient = location.state?.patient || { id, name: "Unknown Patient", external_id: "N/A" };
 
   // --- Refs ---
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
   const ws = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const intervalRef = useRef(null);
   const timelineEndRef = useRef(null);
-  const streamRef = useRef(null);
-
-  // ╔════════════════════════════════════════════════════════════════════╗
-  // ║  CHANGE 2: SEND QUEUE + BACKPRESSURE                              ║
-  // ║  If the WebSocket can't keep up (slow network), we drop frames     ║
-  // ║  instead of queueing stale data. Stale frames = wrong emotions.    ║
-  // ╚════════════════════════════════════════════════════════════════════╝
-  const pendingRef = useRef(0); // Track how many messages are in-flight
 
   // --- State ---
-  const [isRecording, setIsRecording] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState("idle"); // idle, waiting, live, ended
   const [sessionTime, setSessionTime] = useState("00:00");
   const [timeline, setTimeline] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [frameQuality, setFrameQuality] = useState('good');
-  const [qualityDetails, setQualityDetails] = useState(null);
-  const [isBuffering, setIsBuffering] = useState(false);
+  const [liveImage, setLiveImage] = useState(null);
   const [emotionHistory, setEmotionHistory] = useState([]);
   const [liveSessionId, setLiveSessionId] = useState(null);
   const [noteText, setNoteText] = useState('');
@@ -117,67 +65,43 @@ export default function DashboardView() {
     return () => stopCleanup();
   }, []);
 
-  // ╔════════════════════════════════════════════════════════════════════╗
-  // ║  CHANGE 3: HIGHER-RES CAPTURE + CAMERA CONSTRAINTS                ║
-  // ║  We capture at native resolution and downscale on the canvas.      ║
-  // ║  Also request specific camera settings for better face detection.  ║
-  // ╚════════════════════════════════════════════════════════════════════╝
-  const startSession = async () => {
+  const joinSession = () => {
     setTimeline([]);
     setEmotionHistory([]);
-    setFrameQuality('good');
-    setQualityDetails(null);
-    setIsBuffering(false);
+    setSessionStatus("waiting");
+    setLiveImage(null);
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          width: { ideal: 1280 },       // Capture higher, downscale for sending
-          height: { ideal: 720 },
-          frameRate: { ideal: 15 },      // Don't need 30fps for emotion detection
-          facingMode: 'user',
-          // These are hints — browsers may ignore them, but when supported they help
-          ...(navigator.mediaDevices.getSupportedConstraints?.().autoGainControl && {
-            autoGainControl: true
-          }),
-        }, 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,        // Cleaner audio → better audio emotion
-          autoGainControl: true,
-          sampleRate: { ideal: 16000 },  // Match backend's expected rate
-        }
-      });
+    // Connect as THERAPIST
+    ws.current = new WebSocket(`ws://localhost:8000/ws/stream/${patient.id}/therapist`);
 
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+    ws.current.onopen = () => {
+      setIsConnected(true);
+    };
 
-      ws.current = new WebSocket(`ws://localhost:8000/ws/stream/${patient.id}`);
+    ws.current.onclose = () => {
+      setIsConnected(false);
+      setSessionStatus("ended");
+    };
 
-      ws.current.onopen = () => {
-        setIsConnected(true);
-        pendingRef.current = 0;
-        startMediaProcessing(stream);
-      };
+    ws.current.onmessage = (event) => {
+      const response = JSON.parse(event.data);
 
-      ws.current.onclose = () => setIsConnected(false);
+      if (response.event === "session_started") {
+        setLiveSessionId(response.session_db_id);
+        setSessionStatus("live");
+        return;
+      }
 
-      ws.current.onmessage = (event) => {
-        pendingRef.current = Math.max(0, pendingRef.current - 1);
-        setIsBuffering(pendingRef.current > 2);
-        const response = JSON.parse(event.data);
+      if (response.event === "session_ended" || response.event === "stream_disconnected") {
+        setSessionStatus("ended");
+        setLiveImage(null);
+        return;
+      }
 
-        if (response.status === "session_started") {
-          setLiveSessionId(response.session_db_id);
-          return;
-        }
-
-        if (response.status === "finished") {
-          stopCleanup();
-          return;
-        }
-
-        setSessionTime(response.timestamp);
+      if (response.event === "live_stream") {
+        setSessionStatus("live");
+        if (response.image) setLiveImage(response.image);
+        if (response.timestamp) setSessionTime(response.timestamp);
 
         const scores = response.scores || {};
         const confidence = scores[response.emotion] ?? 0;
@@ -196,82 +120,19 @@ export default function DashboardView() {
           }
           return prev;
         });
-      };
-
-      setIsRecording(true);
-    } catch (err) {
-      console.error(err);
-      alert("Camera/Mic access denied. Please allow permissions.");
-    }
-  };
-
-  const startMediaProcessing = (stream) => {
-    // ╔══════════════════════════════════════════════════════════════════╗
-    // ║  CHANGE 4: AUDIO CHUNK SIZE = 500ms                             ║
-    // ║  250ms chunks are too small for emotion classification.          ║
-    // ║  500ms gives the backend enough context per chunk while          ║
-    // ║  still being responsive. The backend accumulates 3s anyway.     ║
-    // ╚══════════════════════════════════════════════════════════════════╝
-    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-    mediaRecorderRef.current = mediaRecorder;
-
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0 && ws.current?.readyState === WebSocket.OPEN) {
-        const reader = new FileReader();
-        reader.readAsDataURL(e.data);
-        reader.onloadend = () => { 
-          ws.current.send(JSON.stringify({ audio: reader.result })); 
-        };
       }
     };
-    mediaRecorder.start(500); // Was 250ms — 500ms gives better audio chunks
-
-    // ╔══════════════════════════════════════════════════════════════════╗
-    // ║  CHANGE 5: ADAPTIVE FRAME SENDING WITH BACKPRESSURE             ║
-    // ║  - Send at ~5 FPS (200ms interval)                              ║
-    // ║  - Skip sending if >2 messages are pending (backpressure)       ║
-    // ║  - Check frame quality every 30 frames                          ║
-    // ║  - Send at higher JPEG quality (0.75 instead of 0.6) so the    ║
-    // ║    face detection model gets cleaner input                      ║
-    // ╚══════════════════════════════════════════════════════════════════╝
-    let frameCounter = 0;
-
-    intervalRef.current = setInterval(() => {
-      if (ws.current?.readyState !== WebSocket.OPEN || !videoRef.current || !canvasRef.current) return;
-      
-      // BACKPRESSURE: If too many messages in flight, skip this frame.
-      // Sending stale/queued frames makes predictions lag behind reality.
-      if (pendingRef.current > 2) {
-        setIsBuffering(true);
-        return;
-      }
-      setIsBuffering(false);
-
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-
-      // Quality check every ~30 frames (~6 seconds)
-      frameCounter++;
-      if (frameCounter % 30 === 0) {
-        const quality = analyzeFrameQuality(canvas);
-        setFrameQuality(quality.quality);
-        setQualityDetails(quality);
-      }
-
-      // Higher JPEG quality = better face features for the model
-      const imageSrc = canvas.toDataURL('image/jpeg', 0.75);
-      ws.current.send(JSON.stringify({ image: imageSrc }));
-      pendingRef.current++;
-
-    }, 200);
   };
 
-  const stopSession = () => {
-    if (ws.current?.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({ event: "stop" }));
-    } else {
-      stopCleanup();
+  const stopCleanup = () => {
+    setSessionStatus("idle");
+    setIsConnected(false);
+    setLiveImage(null);
+    setLiveSessionId(null);
+    
+    if (ws.current) {
+      ws.current.close();
+      ws.current = null;
     }
   };
 
@@ -287,29 +148,8 @@ export default function DashboardView() {
     setNoteText('');
   };
 
-  const stopCleanup = () => {
-    setIsRecording(false);
-    setIsConnected(false);
-    setLiveSessionId(null);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
-    
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) videoRef.current.srcObject = null;
-    
-    if (ws.current) {
-      ws.current.close();
-      ws.current = null;
-    }
-  };
-
   const emotionStyles = getEmotionStyle(currentMetrics.emotion);
-  const hasSignal = isRecording && isConnected;
+  const hasSignal = sessionStatus === "live";
   const confidencePct = Math.round((currentMetrics.confidence ?? 0) * 100);
 
   return (
@@ -324,7 +164,7 @@ export default function DashboardView() {
         </button>
         <div className="flex items-center gap-4">
           <span className="text-sm font-bold text-slate-400">
-            Patient: <span className="text-slate-900">{patient.name}</span>
+            Monitoring Patient: <span className="text-slate-900">{patient.name}</span>
           </span>
           <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500 font-mono">
             {patient.external_id}
@@ -338,7 +178,7 @@ export default function DashboardView() {
           {/* Timer */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <Clock size={14} className="text-indigo-500" /> Elapsed Time
+              <Clock size={14} className="text-indigo-500" /> Session Time
             </h3>
             <div className="flex items-center justify-between">
               <span className="text-3xl font-black text-slate-800 tabular-nums">{sessionTime}</span>
@@ -347,7 +187,7 @@ export default function DashboardView() {
                   ? 'bg-rose-50 text-rose-600 border border-rose-100 animate-pulse' 
                   : 'bg-slate-100 text-slate-500 border border-slate-200'
               }`}>
-                <Circle size={8} fill="currentColor" /> {hasSignal ? 'Live' : 'Ready'}
+                <Circle size={8} fill="currentColor" /> {hasSignal ? 'Live' : 'Standby'}
               </div>
             </div>
           </div>
@@ -355,7 +195,7 @@ export default function DashboardView() {
           {/* Dominant Affect + Scores */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex-1 flex flex-col min-h-0">
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-              <TrendingUp size={14} className="text-indigo-500" /> Dominant Affect
+              <TrendingUp size={14} className="text-indigo-500" /> Patient Affect
             </h3>
             
             <div className={`mb-4 p-6 rounded-2xl text-center border transition-all duration-500 shadow-sm ${emotionStyles.bg} ${emotionStyles.border}`}>
@@ -369,7 +209,7 @@ export default function DashboardView() {
               )}
             </div>
 
-            {/* Emotion trend strip — last 12 detections */}
+            {/* Emotion trend strip */}
             {emotionHistory.length > 0 && (
               <div className="mb-4">
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recent trend</p>
@@ -410,51 +250,63 @@ export default function DashboardView() {
         {/* ───── Video Column ───── */}
         <div className="col-span-6 flex flex-col gap-6">
           <div className="bg-slate-900 rounded-3xl border-4 border-white shadow-2xl overflow-hidden flex flex-col relative aspect-video group">
-            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-            <canvas ref={canvasRef} width="640" height="480" className="hidden" />
             
-            {/* ╔════════════════════════════════════════════════════════════╗
-                ║  CHANGE 6: LIGHTING QUALITY INDICATOR                      ║
-                ║  Shows a warning overlay when frame quality is poor.       ║
-                ║  Bad lighting is the #1 cause of wrong predictions.        ║
-                ╚════════════════════════════════════════════════════════════╝ */}
-            {isRecording && frameQuality === 'poor' && (
-              <div className="absolute top-4 left-4 right-4 bg-amber-500/90 backdrop-blur-sm text-white text-xs font-bold px-4 py-3 rounded-xl flex items-center gap-3 z-10 shadow-lg">
-                {qualityDetails?.isTooDark ? <Moon size={16} /> : <Sun size={16} />}
-                <div>
-                  <p className="text-sm">
-                    {qualityDetails?.isTooDark && "Low light detected — accuracy reduced"}
-                    {qualityDetails?.isTooLight && "Overexposed — move away from light source"}
-                    {qualityDetails?.isLowContrast && !qualityDetails?.isTooDark && !qualityDetails?.isTooLight && "Low contrast — adjust lighting"}
-                  </p>
-                  <p className="opacity-70 mt-0.5">Improve lighting for better emotion detection</p>
-                </div>
-              </div>
+            {/* LIVE IMAGE RECEIVED FROM WEBSOCKET */}
+            {liveImage && (
+              <img 
+                src={liveImage} 
+                alt="Patient Stream" 
+                className="w-full h-full object-cover" 
+                style={{ transform: "scaleX(-1)" }} 
+              />
             )}
 
-            {!isRecording ? (
+            {sessionStatus === "idle" && (
               <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md flex flex-col items-center justify-center text-white p-12 text-center">
                 <div className="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-indigo-500/50">
                   <Video size={40} />
                 </div>
-                <h2 className="text-2xl font-bold mb-2">Ready to Start Session?</h2>
+                <h2 className="text-2xl font-bold mb-2">Ready to Monitor?</h2>
                 <p className="text-slate-400 text-sm mb-8 max-w-xs">
-                  Analysis will begin immediately. Video and audio are encrypted.
+                  Connect to the stream to receive real-time emotional analysis from the patient's device.
                 </p>
                 <button 
-                  onClick={startSession} 
+                  onClick={joinSession} 
                   className="bg-white text-indigo-600 hover:bg-indigo-50 font-black px-10 py-4 rounded-2xl transition-all active:scale-95 shadow-xl"
                 >
-                  START CLINICAL ANALYSIS
+                  JOIN SESSION
                 </button>
               </div>
-            ) : (
-              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 transition-opacity">
+            )}
+
+            {sessionStatus === "waiting" && (
+              <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center text-white text-center">
+                <Radio size={48} className="text-indigo-500 animate-pulse mb-4" />
+                <h2 className="text-xl font-bold mb-2">Waiting for Patient...</h2>
+                <p className="text-slate-400 text-sm">
+                  Connected to server. The stream will begin automatically when the patient starts the session.
+                </p>
                 <button 
-                  onClick={stopSession} 
-                  className="bg-rose-600 hover:bg-rose-700 text-white font-black px-12 py-4 rounded-2xl shadow-2xl flex items-center gap-3 active:scale-95 transition-all"
+                  onClick={stopCleanup}
+                  className="mt-6 text-sm text-slate-400 hover:text-white underline"
                 >
-                  <div className="w-3 h-3 bg-white rounded-full animate-pulse" /> END SESSION
+                  Cancel Connection
+                </button>
+              </div>
+            )}
+
+            {sessionStatus === "ended" && (
+              <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center text-white text-center">
+                <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                  <Video size={32} className="text-slate-500" />
+                </div>
+                <h2 className="text-xl font-bold mb-2">Session Ended</h2>
+                <p className="text-slate-400 text-sm mb-6">The patient has disconnected from the stream.</p>
+                <button 
+                  onClick={stopCleanup} 
+                  className="bg-white text-slate-900 font-bold px-6 py-2 rounded-xl"
+                >
+                  Close Viewer
                 </button>
               </div>
             )}
@@ -466,49 +318,24 @@ export default function DashboardView() {
               <Activity size={20} />
             </div>
             <div className="flex-1">
-              <p className="text-xs font-bold uppercase tracking-wider opacity-60">Neural Engine Status</p>
+              <p className="text-xs font-bold uppercase tracking-wider opacity-60">Connection Status</p>
               <p className="text-sm font-medium">
-                {hasSignal ? "Live Stream Optimized" : "Offline"} 
-                <span className="mx-2 opacity-30">|</span> 
-                {hasSignal ? "Acoustic & Visual Fusion Active" : "Waiting..."}
+                {hasSignal ? "Receiving Live Patient Feed" : sessionStatus === "waiting" ? "Awaiting Data Transfer..." : "Offline"} 
               </p>
             </div>
-            {/* ╔════════════════════════════════════════════════════╗
-                ║  CHANGE 7: SIGNAL QUALITY INDICATORS               ║
-                ║  Visual feedback for connection + frame quality     ║
-                ╚════════════════════════════════════════════════════╝ */}
-            {hasSignal && (
-              <div className="flex items-center gap-3">
-                <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${
-                  frameQuality === 'good' 
-                    ? 'bg-emerald-500/20 text-emerald-300' 
-                    : 'bg-amber-500/20 text-amber-300'
-                }`}>
-                  {frameQuality === 'good' ? <Wifi size={12} /> : <WifiOff size={12} />}
-                  {frameQuality === 'good' ? 'Clear' : 'Noisy'}
-                </div>
-                <div className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${
-                  isBuffering
-                    ? 'bg-amber-500/20 text-amber-300'
-                    : 'bg-emerald-500/20 text-emerald-300'
-                }`}>
-                  {isBuffering ? 'Buffering' : 'Realtime'}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
         {/* ───── Timeline Column ───── */}
         <div className="col-span-3 flex flex-col h-full bg-white rounded-2xl border border-slate-200 p-5 shadow-sm min-h-0">
           <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2 shrink-0">
-            <Activity size={14} className="text-indigo-500" /> Chronological Log
+            <Activity size={14} className="text-indigo-500" /> Clinical Log
           </h3>
           <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
             {timeline.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2 opacity-40">
                 <AlertCircle size={32} />
-                <p className="text-xs font-bold">No events logged yet</p>
+                <p className="text-xs font-bold">Waiting for events...</p>
               </div>
             )}
             {timeline.map((entry, i) => {
@@ -533,7 +360,7 @@ export default function DashboardView() {
           </div>
 
           {/* Live note input — only visible during active session */}
-          {isRecording && liveSessionId && (
+          {hasSignal && liveSessionId && (
             <div className="shrink-0 pt-3 mt-2 border-t border-slate-100">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
                 Note at {sessionTime}
@@ -558,5 +385,110 @@ export default function DashboardView() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ==========================================
+// Main App Component & Layout
+// ==========================================
+
+export function App() {
+  return (
+    <BrowserRouter>
+      {/* h-screen ensures the app takes the full window height */}
+      <div className="flex h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden w-full">
+        <Sidebar />
+        
+        {/* Main Content Area */}
+        <main className="flex-1 flex flex-col overflow-hidden w-full min-w-0">
+          <Header />
+          
+          <div className="flex-1 overflow-y-auto p-6 w-full h-full">
+            <Routes>
+              {/* <Route path="/" element={<PatientList />} /> */}
+              {/* <Route path="/register" element={<PatientRegistration />} /> */}
+              {/* <Route path="/edit/:id" element={<PatientEdit />} /> */}
+              <Route path="/dashboard/:id" element={<DashboardView />} />
+              {/* <Route path="/history/:id" element={<HistoryView />} /> */}
+            </Routes>
+          </div>
+        </main>
+      </div>
+    </BrowserRouter>
+  );
+}
+
+function Sidebar() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <aside className={`${collapsed ? 'w-16' : 'w-56'} bg-white border-r border-slate-200 flex flex-col shrink-0 transition-all duration-200`}>
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        className={`p-4 flex items-center gap-3 hover:bg-slate-50 transition-colors ${collapsed ? 'justify-center' : ''}`}
+      >
+        <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0">
+          <BrainCircuit size={20} />
+        </div>
+        {!collapsed && (
+          <h1 className="font-bold text-base leading-tight whitespace-nowrap">
+            Clinician<span className="text-indigo-600">.AI</span>
+          </h1>
+        )}
+      </button>
+
+      <nav className="flex-1 px-2 space-y-1 mt-2">
+        <NavItem
+          icon={<Users size={20} />}
+          label="All Patients"
+          active={location.pathname === '/'}
+          onClick={() => navigate('/')}
+          collapsed={collapsed}
+        />
+        <NavItem
+          icon={<UserPlus size={20} />}
+          label="New Registration"
+          active={location.pathname === '/register'}
+          onClick={() => navigate('/register')}
+          collapsed={collapsed}
+        />
+      </nav>
+
+      <div className="p-2 border-t border-slate-100">
+        <button className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-all ${collapsed ? 'justify-center' : ''}`}>
+          <LogOut size={16} />
+          {!collapsed && <span>Sign Out</span>}
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function Header() {
+  const location = useLocation();
+  let path = location.pathname.split('/')[1];
+  if (!path) path = 'Patients';
+  
+  return (
+    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 w-full">
+      <h2 className="font-semibold text-slate-800 capitalize">
+        {path.replace('-', ' ')}
+      </h2>
+    </header>
+  );
+}
+
+function NavItem({ icon, label, active, onClick, collapsed }) {
+  return (
+    <button
+      onClick={onClick}
+      title={collapsed ? label : undefined}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${collapsed ? 'justify-center' : ''} ${active ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}
+    >
+      {icon}
+      {!collapsed && <span className="text-sm">{label}</span>}
+    </button>
   );
 }
