@@ -79,4 +79,6 @@ Jinja2==3.1.6
 flatbuffers==25.12.19
 protobuf==6.33.4
 ml_dtypes==0.5.4
+pydub==0.25.1
 pyaudioop
+
