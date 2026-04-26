@@ -1,0 +1,167 @@
+{
+  "session_id": "session_1777165184",
+  "date": "2026-04-26 05:02",
+  "duration": "02:39",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:05",
+      "seconds": 5,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": null
+    },
+    {
+      "time": "00:05",
+      "seconds": 5,
+      "emotion": "neutral",
+      "confidence": 0.9859255236874789
+    },
+    {
+      "time": "00:18",
+      "seconds": 18,
+      "emotion": "Beads: Like",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "emotion_choice"
+    },
+    {
+      "time": "00:18",
+      "seconds": 18,
+      "emotion": "neutral",
+      "confidence": 0.9876209640076555
+    },
+    {
+      "time": "00:30",
+      "seconds": 30,
+      "emotion": "Beads: Fuzzy",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "attribute_choice"
+    },
+    {
+      "time": "00:30",
+      "seconds": 30,
+      "emotion": "neutral",
+      "confidence": 0.9391456883207335
+    },
+    {
+      "time": "00:36",
+      "seconds": 36,
+      "emotion": "Beads: Hard",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "attribute_choice"
+    },
+    {
+      "time": "00:36",
+      "seconds": 36,
+      "emotion": "neutral",
+      "confidence": 0.938910900784315
+    },
+    {
+      "time": "00:43",
+      "seconds": 43,
+      "emotion": "Beads: Bumpy",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "attribute_choice"
+    },
+    {
+      "time": "00:43",
+      "seconds": 43,
+      "emotion": "neutral",
+      "confidence": 0.9692058185127497
+    },
+    {
+      "time": "00:50",
+      "seconds": 50,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": null
+    },
+    {
+      "time": "00:50",
+      "seconds": 50,
+      "emotion": "neutral",
+      "confidence": 0.9322327617311653
+    },
+    {
+      "time": "00:51",
+      "seconds": 51,
+      "emotion": "Touched Mesh",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": null
+    },
+    {
+      "time": "00:51",
+      "seconds": 51,
+      "emotion": "neutral",
+      "confidence": 0.9604673881818947
+    },
+    {
+      "time": "00:59",
+      "seconds": 59,
+      "emotion": "Mesh: Too Much",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "emotion_choice"
+    },
+    {
+      "time": "00:59",
+      "seconds": 59,
+      "emotion": "neutral",
+      "confidence": 0.9418345713066892
+    },
+    {
+      "time": "01:08",
+      "seconds": 68,
+      "emotion": "Touched Carpet",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": null
+    },
+    {
+      "time": "01:08",
+      "seconds": 68,
+      "emotion": "neutral",
+      "confidence": 0.8191901683593239
+    },
+    {
+      "time": "01:21",
+      "seconds": 81,
+      "emotion": "Carpet: Like",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "emotion_choice"
+    },
+    {
+      "time": "01:21",
+      "seconds": 81,
+      "emotion": "neutral",
+      "confidence": 0.8695422791028902
+    },
+    {
+      "time": "02:33",
+      "seconds": 153,
+      "emotion": "Carpet: Bumpy",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "attribute_choice"
+    },
+    {
+      "time": "02:33",
+      "seconds": 153,
+      "emotion": "neutral",
+      "confidence": 0.9306018876529694
+    }
+  ]
+}

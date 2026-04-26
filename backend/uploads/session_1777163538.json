@@ -1,0 +1,26 @@
+{
+  "session_id": "session_1777163538",
+  "date": "2026-04-26 04:33",
+  "duration": "01:19",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:12",
+      "seconds": 12,
+      "emotion": "Touched Mesh",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:12",
+      "seconds": 12,
+      "emotion": "neutral",
+      "confidence": 1.0
+    }
+  ]
+}

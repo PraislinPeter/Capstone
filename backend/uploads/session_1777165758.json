@@ -1,0 +1,41 @@
+{
+  "session_id": "session_1777165758",
+  "date": "2026-04-26 05:09",
+  "duration": "00:13",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:01",
+      "seconds": 1,
+      "emotion": "Touched Mesh",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": null
+    },
+    {
+      "time": "00:01",
+      "seconds": 1,
+      "emotion": "neutral",
+      "confidence": 0.9759430137396883
+    },
+    {
+      "time": "00:09",
+      "seconds": 9,
+      "emotion": "Mesh: Too Much",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "emotion_choice"
+    },
+    {
+      "time": "00:09",
+      "seconds": 9,
+      "emotion": "neutral",
+      "confidence": 0.9845963639992132
+    }
+  ]
+}
