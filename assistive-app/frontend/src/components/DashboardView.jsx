@@ -14,7 +14,9 @@ import {
   Users, 
   LogOut,
   Radio,
-  Sparkles
+  Sparkles,
+  MessageCircle,
+  Wind
 } from 'lucide-react';
 
 // --- Utility: Emotion Styling ---
@@ -104,6 +106,64 @@ export default function DashboardView() {
             confidence: 1.0 
           }
         ]);
+        return;
+      }
+
+      if (response.event === "break_started") {
+        setTimeline(prev => [
+          ...prev,
+          {
+            time: response.timestamp,
+            emotion: `Sensory Break: ${response.texture_name}`,
+            isInteraction: true,
+            confidence: 1.0
+          }
+        ]);
+        return;
+      }
+
+      if (response.event === "break_ended") {
+        setTimeline(prev => [
+          ...prev,
+          {
+            time: response.timestamp,
+            emotion: "Break Ended",
+            isInteraction: true,
+            confidence: 1.0
+          }
+        ]);
+        return;
+      }
+
+      if (response.event === "child_feedback") {
+        setTimeline(prev => [
+          ...prev,
+          {
+            time: response.timestamp,
+            emotion: `${response.texture_name}: ${response.value}`,
+            isFeedback: true,
+            feedbackType: response.feedback_type,
+            confidence: 1.0,
+          }
+        ]);
+        return;
+      }
+
+      if (response.event === "break_started") {
+        setTimeline(prev => [...prev, {
+          time: response.timestamp,
+          emotion: `Sensory Break${response.texture_name ? ': ' + response.texture_name : ''}`,
+          isBreak: true, breakType: 'started', confidence: 1.0,
+        }]);
+        return;
+      }
+
+      if (response.event === "break_ended") {
+        setTimeline(prev => [...prev, {
+          time: response.timestamp,
+          emotion: 'Break Ended',
+          isBreak: true, breakType: 'ended', confidence: 1.0,
+        }]);
         return;
       }
 
@@ -355,29 +415,56 @@ export default function DashboardView() {
               </div>
             )}
             {timeline.map((entry, i) => {
-              // Decide style: Sensory interactions use Indigo theme, Emotions use original map
               const isInt = entry.isInteraction;
-              const style = isInt 
-                ? { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700' }
-                : getEmotionStyle(entry.emotion);
+              const isFb  = entry.isFeedback;
+              const isBrk = entry.isBreak;
+
+              const style = isBrk
+                ? entry.breakType === 'started'
+                  ? { bg: 'bg-sky-50',     border: 'border-sky-200',     text: 'text-sky-700',     accent: 'border-l-sky-500' }
+                  : { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', accent: 'border-l-emerald-500' }
+                : isFb
+                  ? entry.feedbackType === 'attribute_choice'
+                    ? { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', accent: 'border-l-amber-500' }
+                    : { bg: 'bg-teal-50',  border: 'border-teal-200',  text: 'text-teal-700',  accent: 'border-l-teal-500' }
+                  : isInt
+                    ? { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', accent: 'border-l-indigo-500' }
+                    : { ...getEmotionStyle(entry.emotion), accent: 'border-l-current' };
+
+              const badge = isBrk ? (
+                <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-1 ${
+                  entry.breakType === 'started' ? 'bg-sky-500 text-white' : 'bg-emerald-500 text-white'
+                }`}>
+                  <Wind size={8} /> {entry.breakType === 'started' ? 'Break' : 'Resumed'}
+                </span>
+              ) : isFb ? (
+                <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-1 ${
+                  entry.feedbackType === 'attribute_choice'
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-teal-500 text-white'
+                }`}>
+                  <MessageCircle size={8} />
+                  {entry.feedbackType === 'attribute_choice' ? 'Attribute' : 'Feeling'}
+                </span>
+              ) : isInt ? (
+                <span className="text-[8px] bg-indigo-600 text-white px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-1">
+                  <Sparkles size={8} /> Sensory
+                </span>
+              ) : (
+                entry.confidence != null && (
+                  <span className={`text-[9px] font-bold ${style.text} opacity-60`}>
+                    {Math.round(entry.confidence * 100)}%
+                  </span>
+                )
+              );
 
               return (
-                <div key={i} className={`p-3 rounded-xl border-l-4 transition-all ${style.bg} ${style.border} ${isInt ? 'border-l-indigo-500' : 'border-l-current'}`}>
+                <div key={i} className={`p-3 rounded-xl border-l-4 transition-all ${style.bg} ${style.border} ${style.accent}`}>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-[9px] font-black font-mono text-slate-400 uppercase">
                       {entry.time}
                     </span>
-                    {isInt ? (
-                      <span className="text-[8px] bg-indigo-600 text-white px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-1">
-                        <Sparkles size={8} /> Sensory
-                      </span>
-                    ) : (
-                      entry.confidence != null && (
-                        <span className={`text-[9px] font-bold ${style.text} opacity-60`}>
-                          {Math.round(entry.confidence * 100)}%
-                        </span>
-                      )
-                    )}
+                    {badge}
                   </div>
                   <p className={`text-sm font-bold capitalize ${style.text}`}>{entry.emotion}</p>
                 </div>

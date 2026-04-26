@@ -1,5 +1,5 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, DateTime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Date
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Date, Boolean
 from datetime import date
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -48,8 +48,10 @@ class TimelineEntry(Base):
     session_id = Column(Integer, ForeignKey("sessions.id"))
     timestamp_str = Column(String(20))
     seconds = Column(Integer)
-    emotion = Column(String(50))
+    emotion = Column(String(100))
     confidence = Column(Float)
+    is_interaction = Column(Boolean, default=False, nullable=True)
+    feedback_type = Column(String(50), nullable=True)
 
     session = relationship("SessionRecord", back_populates="timeline")
 

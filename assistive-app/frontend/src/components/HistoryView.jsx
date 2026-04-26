@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Play, Clock, Calendar, ChevronRight, Film,
   BarChart3, ArrowLeft, Download, TrendingUp, ListVideo,
-  FileText, MessageSquare, Plus, Trash2, AlertTriangle, CheckCircle, Sparkles
+  FileText, MessageSquare, MessageCircle, Wind, Plus, Trash2, AlertTriangle, CheckCircle, Sparkles
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -227,22 +227,38 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
   const totalSecs = parseSeconds(duration) || parseSeconds(timeline?.[timeline.length - 1]?.time) + 5;
 
   // 1. Calculate sensory correlations: Texture -> Following Emotion
-  const sensoryEvents = (timeline || []).filter(e => e.is_interaction || e.emotion?.toLowerCase().includes('touched'));
-  
-  const correlations = sensoryEvents.map(event => {
+  // Only actual texture touches define window boundaries (not feedback events)
+  const sensoryEvents = (timeline || []).filter(e =>
+    (e.is_interaction || e.emotion?.toLowerCase().includes('touched')) && !e.feedback_type
+  );
+
+  const correlations = sensoryEvents.map((event, i) => {
     const startTime = parseSeconds(event.time);
-    const endTime = startTime + 5; // Look at the 5 seconds following the touch
-    
-    // Find the emotion shifts that happened in this 5-second window
-    const reactions = (timeline || []).filter(e => {
+    const nextTexture = sensoryEvents[i + 1];
+    const endTime = nextTexture ? parseSeconds(nextTexture.time) : totalSecs;
+
+    const windowEntries = (timeline || []).filter(e => {
       const t = parseSeconds(e.time);
-      return t >= startTime && t <= endTime && !e.is_interaction;
+      return t > startTime && t < endTime;
     });
+
+    const reactions = windowEntries
+      .filter(e => !e.is_interaction)
+      .map(e => ({ emotion: e.emotion, time: e.time }));
+
+    const childFeedback = windowEntries
+      .filter(e => e.feedback_type)
+      .map(e => ({
+        type: e.feedback_type,
+        value: e.emotion.includes(': ') ? e.emotion.split(': ')[1] : e.emotion,
+        time: e.time,
+      }));
 
     return {
       texture: event.emotion.replace('Touched ', ''),
       time: event.time,
-      reaction: reactions.length > 0 ? reactions[reactions.length - 1].emotion : 'Neutral'
+      reactions: reactions.length > 0 ? reactions : [{ emotion: 'Neutral', time: event.time }],
+      childFeedback,
     };
   });
 
@@ -306,7 +322,10 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
                 key={i}
                 onClick={() => onSeek(seg.time)}
                 className={`h-full hover:opacity-75 transition-opacity ${
-                  seg.is_interaction ? 'bg-indigo-600' : getEmotionStyle(seg.emotion).color
+                  seg.feedback_type === 'break_started' ? 'bg-sky-400' :
+                  seg.feedback_type === 'break_ended'   ? 'bg-emerald-400' :
+                  seg.is_interaction ? 'bg-indigo-600' :
+                  getEmotionStyle(seg.emotion).color
                 }`}
                 style={{ width: `${width}%`, minWidth: '2px' }}
               />
@@ -382,23 +401,53 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
                   <tr className="bg-slate-50 border-b border-slate-100">
                     <th className="py-2 px-3 text-[10px] font-bold text-slate-400 uppercase">Texture</th>
                     <th className="py-2 px-3 text-[10px] font-bold text-slate-400 uppercase">Time</th>
-                    <th className="py-2 px-3 text-[10px] font-bold text-slate-400 uppercase">Response</th>
+                    <th className="py-2 px-3 text-[10px] font-bold text-slate-400 uppercase">Child Says</th>
+                    <th className="py-2 px-3 text-[10px] font-bold text-slate-400 uppercase">AI Affect</th>
                   </tr>
                 </thead>
                 <tbody>
                   {correlations.length > 0 ? correlations.map((c, i) => (
                     <tr key={i} className="border-b border-slate-50 group hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => onSeek(c.time)}>
-                      <td className="py-3 px-3 text-xs font-bold text-slate-700">{c.texture}</td>
-                      <td className="py-3 px-3 text-xs font-mono text-slate-400 group-hover:text-indigo-600">{c.time}</td>
-                      <td className="py-3 px-3">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${getEmotionStyle(c.reaction).bg} ${getEmotionStyle(c.reaction).text}`}>
-                          {c.reaction}
-                        </span>
+                      <td className="py-3 px-3 text-xs font-bold text-slate-700 align-top">{c.texture}</td>
+                      <td className="py-3 px-3 text-xs font-mono text-slate-400 group-hover:text-indigo-600 align-top">{c.time}</td>
+                      <td className="py-3 px-3 align-top">
+                        {c.childFeedback.length > 0 ? (
+                          <div className="flex flex-col gap-1">
+                            {c.childFeedback.map((f, j) => (
+                              <span
+                                key={j}
+                                title={f.type === 'emotion_choice' ? 'Feeling choice' : 'Attribute choice'}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase w-fit ${
+                                  f.type === 'attribute_choice'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-teal-100 text-teal-700'
+                                }`}
+                              >
+                                <MessageCircle size={8} />
+                                {f.value}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-300 italic">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 align-top">
+                        <div className="flex flex-col gap-1">
+                          {c.reactions.map((r, j) => (
+                            <div key={j} className="flex items-center gap-1.5">
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${getEmotionStyle(r.emotion).bg} ${getEmotionStyle(r.emotion).text}`}>
+                                {r.emotion}
+                              </span>
+                              <span className="text-[9px] font-mono text-slate-300">{r.time}</span>
+                            </div>
+                          ))}
+                        </div>
                       </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan="3" className="py-10 text-center text-slate-300 text-xs italic">No interactions recorded.</td>
+                      <td colSpan="4" className="py-10 text-center text-slate-300 text-xs italic">No interactions recorded.</td>
                     </tr>
                   )}
                 </tbody>
@@ -423,10 +472,27 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
         {tab === 'log' && (
           <div className="space-y-2">
             {timeline?.map((event, idx) => {
-              const isInt = event.is_interaction;
-              const style = isInt 
-                ? { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' }
-                : getEmotionStyle(event.emotion);
+              const isFb  = !!event.feedback_type && !['break_started','break_ended'].includes(event.feedback_type);
+              const isBrk = event.feedback_type === 'break_started' || event.feedback_type === 'break_ended';
+              const isInt = event.is_interaction && !isFb && !isBrk;
+              const style = isBrk
+                ? event.feedback_type === 'break_started'
+                  ? { bg: 'bg-sky-100',     text: 'text-sky-700',     border: 'border-sky-200' }
+                  : { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' }
+                : isFb
+                  ? event.feedback_type === 'attribute_choice'
+                    ? { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' }
+                    : { bg: 'bg-teal-100',  text: 'text-teal-700',  border: 'border-teal-200' }
+                  : isInt
+                    ? { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' }
+                    : getEmotionStyle(event.emotion);
+              const icon = isBrk
+                ? <Wind size={12} />
+                : isFb
+                  ? <MessageCircle size={12} />
+                  : isInt
+                    ? <Sparkles size={12} />
+                    : <Play size={12} fill="currentColor" />;
               return (
                 <button
                   key={idx}
@@ -434,7 +500,7 @@ function AnalysisPanel({ session, sessions, onSeek, currentVideoSecs, trendInsig
                   className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 w-full hover:bg-white hover:border-indigo-200 transition-all text-left group"
                 >
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${style.bg} ${style.text}`}>
-                    {isInt ? <Sparkles size={12} /> : <Play size={12} fill="currentColor" />}
+                    {icon}
                   </div>
                   <span className="font-mono text-xs font-bold text-slate-400 group-hover:text-indigo-500">{event.time}</span>
                   <div className={`ml-auto px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${style.bg} ${style.text} ${style.border}`}>

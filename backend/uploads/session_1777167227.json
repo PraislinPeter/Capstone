@@ -1,0 +1,89 @@
+{
+  "session_id": "session_1777167227",
+  "date": "2026-04-26 05:35",
+  "duration": "01:14",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:01",
+      "seconds": 1,
+      "emotion": "Touched Mesh",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": null
+    },
+    {
+      "time": "00:01",
+      "seconds": 1,
+      "emotion": "neutral",
+      "confidence": 0.9748781260005543
+    },
+    {
+      "time": "00:07",
+      "seconds": 7,
+      "emotion": "Mesh: Too Much",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "emotion_choice"
+    },
+    {
+      "time": "00:07",
+      "seconds": 7,
+      "emotion": "Sensory Break: Mesh",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "break_started"
+    },
+    {
+      "time": "00:07",
+      "seconds": 7,
+      "emotion": "neutral",
+      "confidence": 0.9857569380360831
+    },
+    {
+      "time": "00:37",
+      "seconds": 37,
+      "emotion": "Break Ended",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "break_ended"
+    },
+    {
+      "time": "00:37",
+      "seconds": 37,
+      "emotion": "neutral",
+      "confidence": 0.45766472366300104
+    },
+    {
+      "time": "00:37",
+      "seconds": 37,
+      "emotion": "Touched Mesh",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": null
+    },
+    {
+      "time": "00:37",
+      "seconds": 37,
+      "emotion": "neutral",
+      "confidence": 0.45766472366300104
+    },
+    {
+      "time": "00:39",
+      "seconds": 39,
+      "emotion": "fear",
+      "confidence": 0.40685509993338576
+    },
+    {
+      "time": "00:46",
+      "seconds": 46,
+      "emotion": "neutral",
+      "confidence": 0.5588042127693946
+    }
+  ]
+}

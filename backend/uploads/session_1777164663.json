@@ -1,0 +1,76 @@
+{
+  "session_id": "session_1777164663",
+  "date": "2026-04-26 04:52",
+  "duration": "01:47",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:14",
+      "seconds": 14,
+      "emotion": "happy",
+      "confidence": 0.49739659530773017
+    },
+    {
+      "time": "00:17",
+      "seconds": 17,
+      "emotion": "neutral",
+      "confidence": 0.6377079904896333
+    },
+    {
+      "time": "00:18",
+      "seconds": 18,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:18",
+      "seconds": 18,
+      "emotion": "neutral",
+      "confidence": 0.7989423452051185
+    },
+    {
+      "time": "00:41",
+      "seconds": 41,
+      "emotion": "happy",
+      "confidence": 0.5646068539547128
+    },
+    {
+      "time": "00:46",
+      "seconds": 46,
+      "emotion": "neutral",
+      "confidence": 0.49386884807303544
+    },
+    {
+      "time": "00:47",
+      "seconds": 47,
+      "emotion": "Touched Mesh",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:47",
+      "seconds": 47,
+      "emotion": "neutral",
+      "confidence": 0.6395658447221981
+    },
+    {
+      "time": "01:22",
+      "seconds": 82,
+      "emotion": "Touched Carpet",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "01:22",
+      "seconds": 82,
+      "emotion": "neutral",
+      "confidence": 0.9872898688496844
+    }
+  ]
+}

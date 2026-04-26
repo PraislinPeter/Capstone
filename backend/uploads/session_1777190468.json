@@ -1,0 +1,55 @@
+{
+  "session_id": "session_1777190468",
+  "date": "2026-04-26 12:02",
+  "duration": "01:04",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:34",
+      "seconds": 34,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": null
+    },
+    {
+      "time": "00:34",
+      "seconds": 34,
+      "emotion": "neutral",
+      "confidence": 0.8223571241806036
+    },
+    {
+      "time": "00:44",
+      "seconds": 44,
+      "emotion": "Beads: Like",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "emotion_choice"
+    },
+    {
+      "time": "00:44",
+      "seconds": 44,
+      "emotion": "neutral",
+      "confidence": 0.9372289065104004
+    },
+    {
+      "time": "01:00",
+      "seconds": 60,
+      "emotion": "Beads: Bumpy",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "attribute_choice"
+    },
+    {
+      "time": "01:00",
+      "seconds": 60,
+      "emotion": "neutral",
+      "confidence": 0.7867264388115541
+    }
+  ]
+}
