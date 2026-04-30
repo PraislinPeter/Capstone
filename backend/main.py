@@ -37,7 +37,7 @@ from database import SessionLocal, engine, Patient, SessionRecord, TimelineEntry
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 EMOTION_MODEL = "trpakov/vit-face-expression"
-AUDIO_MODEL = "ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition"
+AUDIO_MODEL = "superb/wav2vec2-base-superb-er"
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -97,7 +97,7 @@ def _load_models():
 
     # 2. Face Detection
     face_app = FaceAnalysis(
-        name="buffalo_l",
+        name="buffalo_s",
         providers=["CUDAExecutionProvider" if DEVICE ==
                    "cuda" else "CPUExecutionProvider"]
     )
@@ -105,7 +105,7 @@ def _load_models():
 
     # 3. Audio Model
     audio_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
-        "facebook/wav2vec2-large-xlsr-53")
+        AUDIO_MODEL)
     audio_model = AutoModelForAudioClassification.from_pretrained(
         AUDIO_MODEL).to(DEVICE).eval()
     aud_id2label = audio_model.config.id2label
@@ -988,7 +988,7 @@ async def _finalize_session(
             **{"check": True, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
         )
         # Updated Cleanup: Remove all three temporary source files
-        for temp_path in [temp_video_path_webm, temp_video_path_mp4, temp_audio_path]:
+        for temp_path in [temp_video_path, temp_video_mp4, temp_audio_path]:
             if temp_path.exists():
                 await asyncio.to_thread(os.remove, temp_path)
 
@@ -996,7 +996,9 @@ async def _finalize_session(
     except Exception as e:
         print(f"❌ FFmpeg mux failed: {e}")
         if temp_video_path.exists():
-            await asyncio.to_thread(os.rename, temp_video_path, final_output_path)
+            await asyncio.to_thread(os.replace, temp_video_path, final_output_path)
+        if temp_video_mp4.exists():
+            await asyncio.to_thread(os.replace, temp_video_mp4, final_mp4)
 
     duration_delta = int(time.time() - start_time)
     duration_str = f"{duration_delta // 60:02}:{duration_delta % 60:02}"
@@ -1098,6 +1100,10 @@ class SessionManager:
             self.active_sessions[patient_id]["current_emotion"] = emotion
             self.active_sessions[patient_id]["current_scores"] = scores
 
+    def set_current_page(self, patient_id: int, page: int):
+        if patient_id in self.active_sessions:
+            self.active_sessions[patient_id]["current_page"] = page
+
 
 manager = SessionManager()
 # ------------------- WEBSOCKET STREAM -------------------
@@ -1106,6 +1112,7 @@ manager = SessionManager()
 
 @app.websocket("/ws/stream/{patient_id}/{role}")
 async def stream(ws: WebSocket, patient_id: int, role: str):
+    session_id = None
     # 1. Validation & Initialization
     if role not in ["child", "therapist"]:
         await ws.close(code=1008, reason="Invalid role. Must be 'child' or 'therapist'.")
@@ -1304,6 +1311,15 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
                     "timestamp": timestamp
                 })
 
+                # Send back to the child so it can update its screen and clear the flight limiter
+                try:
+                    await ws.send_json({
+                        "emotion": final_emotion,
+                        "timestamp": timestamp
+                    })
+                except:
+                    pass
+
             elif role == "therapist":
                 # Handle pings to keep connection alive
                 if data.get("event") == "ping":
@@ -1318,15 +1334,17 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
         if role == "child":
             try:
                 out.release()
+                out_mp4.release()
             except:
                 pass
 
             # Run finalization (Muxing video/audio, saving JSON and DB)
-            await _finalize_session(
-                session_id, temp_video_path, temp_audio_path, final_output_path,
-                json_path, audio_buffer.getvalue(), start_time, session_timeline,
-                patient_id, session_db_id
-            )
+            if session_id:
+                await _finalize_session(
+                    session_id, temp_video_path, temp_video_path_mp4, temp_audio_path,
+                    final_output_path, final_output_mp4, json_path, audio_buffer.getvalue(),
+                    start_time, session_timeline, patient_id, session_db_id
+                )
 
             await manager.broadcast_to_therapists(patient_id, {"event": "stream_disconnected"})
 
