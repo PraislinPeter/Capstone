@@ -37,17 +37,19 @@ from database import SessionLocal, engine, Patient, SessionRecord, TimelineEntry
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 EMOTION_MODEL = "trpakov/vit-face-expression"
-AUDIO_MODEL = "ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition"
+AUDIO_MODEL = "superb/wav2vec2-base-superb-er"
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 app = FastAPI()
 
+
 @app.on_event("startup")
 def on_startup():
     init_db()
     print("✅ API started (models load on first emotion detection)")
+
 
 # Fixed: Only one CORS middleware
 app.add_middleware(
@@ -72,39 +74,45 @@ get_speech_timestamps = None
 USE_SILERO_VAD = False
 models_loaded = False
 
-COMMON_EMOTIONS = ['neutral', 'happy', 'sad', 'angry', 'fear', 'surprise', 'disgust']
+COMMON_EMOTIONS = ['neutral', 'happy', 'sad',
+                   'angry', 'fear', 'surprise', 'disgust']
+
 
 def _load_models():
     """Load all ML models ONLY on first emotion detection"""
     global processor, video_model, vid_id2label, face_app
     global audio_extractor, audio_model, aud_id2label
     global SILERO_VAD_MODEL, get_speech_timestamps, USE_SILERO_VAD, models_loaded
-    
+
     if models_loaded:
         return  # Already loaded
-    
+
     print(f"🚀 Loading Clinical Models on {DEVICE}...")
-    
+
     # 1. Vision Model
     processor = AutoImageProcessor.from_pretrained(EMOTION_MODEL)
-    video_model = AutoModelForImageClassification.from_pretrained(EMOTION_MODEL).to(DEVICE).eval()
+    video_model = AutoModelForImageClassification.from_pretrained(
+        EMOTION_MODEL).to(DEVICE).eval()
     vid_id2label = video_model.config.id2label
-    
+
     # 2. Face Detection
     face_app = FaceAnalysis(
-        name="buffalo_l",
-        providers=["CUDAExecutionProvider" if DEVICE == "cuda" else "CPUExecutionProvider"]
+        name="buffalo_s",
+        providers=["CUDAExecutionProvider" if DEVICE ==
+                   "cuda" else "CPUExecutionProvider"]
     )
     face_app.prepare(ctx_id=0 if DEVICE == "cuda" else -1, det_size=(640, 640))
-    
+
     # 3. Audio Model
-    audio_extractor = Wav2Vec2FeatureExtractor.from_pretrained("facebook/wav2vec2-large-xlsr-53")
-    audio_model = AutoModelForAudioClassification.from_pretrained(AUDIO_MODEL).to(DEVICE).eval()
+    audio_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
+        AUDIO_MODEL)
+    audio_model = AutoModelForAudioClassification.from_pretrained(
+        AUDIO_MODEL).to(DEVICE).eval()
     aud_id2label = audio_model.config.id2label
-    
+
     print(f"  ✅ Video labels: {vid_id2label}")
     print(f"  ✅ Audio labels: {aud_id2label}")
-    
+
     # 4. Optional: Silero VAD
     try:
         SILERO_VAD_MODEL, silero_utils = torch.hub.load(
@@ -117,7 +125,7 @@ def _load_models():
     except Exception:
         USE_SILERO_VAD = False
         print("  ⚠️  Silero VAD not available, using RMS + spectral flatness fallback.")
-    
+
     models_loaded = True
     print("🚀 All models loaded!\n")
 
@@ -152,9 +160,12 @@ class EmotionEngine:
         avg_g = np.mean(result[:, :, 1])
         avg_r = np.mean(result[:, :, 2])
         avg_gray = (avg_b + avg_g + avg_r) / 3.0
-        if avg_b > 0: result[:, :, 0] *= avg_gray / avg_b
-        if avg_g > 0: result[:, :, 1] *= avg_gray / avg_g
-        if avg_r > 0: result[:, :, 2] *= avg_gray / avg_r
+        if avg_b > 0:
+            result[:, :, 0] *= avg_gray / avg_b
+        if avg_g > 0:
+            result[:, :, 1] *= avg_gray / avg_g
+        if avg_r > 0:
+            result[:, :, 2] *= avg_gray / avg_r
         return np.clip(result, 0, 255).astype(np.uint8)
 
     def align_face(self, frame, landmarks):
@@ -162,7 +173,8 @@ class EmotionEngine:
         dy = right_eye[1] - left_eye[1]
         dx = right_eye[0] - left_eye[0]
         angle = np.degrees(np.arctan2(dy, dx))
-        center = ((left_eye[0] + right_eye[0]) // 2, (left_eye[1] + right_eye[1]) // 2)
+        center = ((left_eye[0] + right_eye[0]) // 2,
+                  (left_eye[1] + right_eye[1]) // 2)
         M = cv2.getRotationMatrix2D(center, angle, 1.0)
         h, w = frame.shape[:2]
         return cv2.warpAffine(frame, M, (w, h), flags=cv2.INTER_CUBIC)
@@ -172,7 +184,8 @@ class EmotionEngine:
         best_face, min_dist = None, float('inf')
         for face in faces:
             x1, y1, x2, y2 = face.bbox
-            dist = math.hypot((x1 + x2) / 2 - center_x, (y1 + y2) / 2 - center_y)
+            dist = math.hypot((x1 + x2) / 2 - center_x,
+                              (y1 + y2) / 2 - center_y)
             if dist < min_dist:
                 min_dist = dist
                 best_face = face
@@ -185,7 +198,7 @@ class EmotionEngine:
         global video_model, processor, face_app, vid_id2label
         if video_model is None:
             _load_models()
-        
+
         enhanced = self.enhance_image(frame)
 
         faces = face_app.get(enhanced)
@@ -198,7 +211,8 @@ class EmotionEngine:
 
         curr_bbox = face.bbox
         if self.last_bbox is not None:
-            curr_bbox = self.last_bbox * (1 - self.box_alpha) + curr_bbox * self.box_alpha
+            curr_bbox = self.last_bbox * \
+                (1 - self.box_alpha) + curr_bbox * self.box_alpha
         self.last_bbox = curr_bbox
         x1, y1, x2, y2 = map(int, curr_bbox)
 
@@ -224,13 +238,20 @@ class EmotionEngine:
         for i, p in enumerate(probs):
             label = vid_id2label[i].lower()
             val = float(p)
-            if 'happ' in label or 'joy' in label:        scores['happy'] += val
-            elif 'sad' in label:                           scores['sad'] += val
-            elif 'ang' in label:                           scores['angry'] += val
-            elif 'fear' in label:                          scores['fear'] += val
-            elif 'surp' in label:                          scores['surprise'] += val
-            elif 'disg' in label or 'contempt' in label:  scores['disgust'] += val
-            else:                                          scores['neutral'] += val
+            if 'happ' in label or 'joy' in label:
+                scores['happy'] += val
+            elif 'sad' in label:
+                scores['sad'] += val
+            elif 'ang' in label:
+                scores['angry'] += val
+            elif 'fear' in label:
+                scores['fear'] += val
+            elif 'surp' in label:
+                scores['surprise'] += val
+            elif 'disg' in label or 'contempt' in label:
+                scores['disgust'] += val
+            else:
+                scores['neutral'] += val
 
         # EMA smoothing
         if self.ema_video_scores is None:
@@ -252,7 +273,8 @@ class EmotionEngine:
     def _is_speech(self, chunk_16k: np.ndarray) -> bool:
         if USE_SILERO_VAD:
             tensor = torch.from_numpy(chunk_16k).float()
-            timestamps = get_speech_timestamps(tensor, SILERO_VAD_MODEL, sampling_rate=16000)
+            timestamps = get_speech_timestamps(
+                tensor, SILERO_VAD_MODEL, sampling_rate=16000)
             return len(timestamps) > 0
         else:
             rms = np.sqrt(np.mean(chunk_16k ** 2))
@@ -270,20 +292,23 @@ class EmotionEngine:
         global audio_model, audio_extractor, aud_id2label
         if audio_model is None:
             _load_models()
-        
+
         try:
             if "," in raw_b64:
                 raw_b64 = raw_b64.split(",")[-1]
 
             audio_data = base64.b64decode(raw_b64)
-            audio = AudioSegment.from_file(io.BytesIO(audio_data), format="webm")
+            audio = AudioSegment.from_file(
+                io.BytesIO(audio_data), format="webm")
             audio = audio.set_frame_rate(16000).set_channels(1)
-            chunk = np.array(audio.get_array_of_samples(), dtype=np.float32) / (2 ** 15)
+            chunk = np.array(audio.get_array_of_samples(),
+                             dtype=np.float32) / (2 ** 15)
 
             if not self._is_speech(chunk):
                 return None
 
-            self.audio_buffer_raw = np.concatenate((self.audio_buffer_raw, chunk))
+            self.audio_buffer_raw = np.concatenate(
+                (self.audio_buffer_raw, chunk))
             max_len = 16000 * 3
             if len(self.audio_buffer_raw) > max_len:
                 self.audio_buffer_raw = self.audio_buffer_raw[-max_len:]
@@ -303,14 +328,22 @@ class EmotionEngine:
             for i, p in enumerate(probs):
                 label = aud_id2label[i].lower()
                 val = float(p)
-                if 'ang' in label:                          scores['angry'] += val
-                elif 'calm' in label or 'neu' in label:     scores['neutral'] += val
-                elif 'disg' in label:                        scores['disgust'] += val
-                elif 'fear' in label:                        scores['fear'] += val
-                elif 'hap' in label:                         scores['happy'] += val
-                elif 'sad' in label:                         scores['sad'] += val
-                elif 'surp' in label:                        scores['surprise'] += val
-                else:                                        scores['neutral'] += val
+                if 'ang' in label:
+                    scores['angry'] += val
+                elif 'calm' in label or 'neu' in label:
+                    scores['neutral'] += val
+                elif 'disg' in label:
+                    scores['disgust'] += val
+                elif 'fear' in label:
+                    scores['fear'] += val
+                elif 'hap' in label:
+                    scores['happy'] += val
+                elif 'sad' in label:
+                    scores['sad'] += val
+                elif 'surp' in label:
+                    scores['surprise'] += val
+                else:
+                    scores['neutral'] += val
 
             if self.ema_audio_scores is None:
                 self.ema_audio_scores = dict(scores)
@@ -363,7 +396,8 @@ class EmotionEngine:
 
         final_scores = {}
         for k in COMMON_EMOTIONS:
-            final_scores[k] = float(v_scores.get(k, 0)) * w_v + float(a_scores.get(k, 0)) * w_a
+            final_scores[k] = float(v_scores.get(k, 0)) * \
+                w_v + float(a_scores.get(k, 0)) * w_a
 
         total = sum(final_scores.values())
         if total > 0:
@@ -395,7 +429,8 @@ def list_patients(db: Session = Depends(get_db)):
     for p in patients:
         age = "N/A"
         if p.dob:
-            age = today.year - p.dob.year - ((today.month, today.day) < (p.dob.month, p.dob.day))
+            age = today.year - p.dob.year - \
+                ((today.month, today.day) < (p.dob.month, p.dob.day))
         results.append({
             "id": p.id, "name": p.name, "external_id": p.external_id,
             "age": age, "gender": p.gender, "contact": p.contact_info
@@ -424,12 +459,15 @@ def update_patient(patient_id: int, patient_data: dict, db: Session = Depends(ge
     patient.name = patient_data.get('name', patient.name)
     patient.external_id = patient_data.get('external_id', patient.external_id)
     patient.gender = patient_data.get('gender', patient.gender)
-    patient.contact_info = patient_data.get('contact_info', patient.contact_info)
-    patient.medical_history = patient_data.get('medical_history', patient.medical_history)
+    patient.contact_info = patient_data.get(
+        'contact_info', patient.contact_info)
+    patient.medical_history = patient_data.get(
+        'medical_history', patient.medical_history)
 
     if patient_data.get('dob'):
         try:
-            patient.dob = datetime.strptime(patient_data.get('dob'), "%Y-%m-%d").date()
+            patient.dob = datetime.strptime(
+                patient_data.get('dob'), "%Y-%m-%d").date()
         except Exception:
             pass
 
@@ -439,7 +477,8 @@ def update_patient(patient_id: int, patient_data: dict, db: Session = Depends(ge
         return patient
     except Exception:
         db.rollback()
-        raise HTTPException(status_code=400, detail="Update failed. MRN may be duplicate.")
+        raise HTTPException(
+            status_code=400, detail="Update failed. MRN may be duplicate.")
 
 
 @app.post("/patients")
@@ -447,7 +486,8 @@ def register_patient(patient_data: dict, db: Session = Depends(get_db)):
     dob_obj = None
     if patient_data.get('dob'):
         try:
-            dob_obj = datetime.strptime(patient_data.get('dob'), "%Y-%m-%d").date()
+            dob_obj = datetime.strptime(
+                patient_data.get('dob'), "%Y-%m-%d").date()
         except Exception:
             pass
 
@@ -483,7 +523,15 @@ def get_patient_history(patient_id: int, db: Session = Depends(get_db)):
         {
             "id": s.id, "date": s.date_recorded.strftime("%Y-%m-%d %H:%M"),
             "duration": s.duration, "video_url": s.video_url,
-            "timeline": [{"time": t.timestamp_str, "emotion": t.emotion, "is_interaction": t.is_interaction, "feedback_type": t.feedback_type} for t in s.timeline]
+            "timeline": [
+                {
+                        "time": t.timestamp_str, "emotion": t.emotion,
+                        "confidence": t.confidence,
+                        "is_interaction": bool(t.is_interaction),
+                        "feedback_type": t.feedback_type
+                }
+                for t in s.timeline
+            ]
         }
         for s in sessions
         if s.video_url
@@ -493,7 +541,8 @@ def get_patient_history(patient_id: int, db: Session = Depends(get_db)):
 @app.get("/history")
 def get_history():
     sessions = []
-    video_files = list(UPLOAD_DIR.glob("*.webm")) + list(UPLOAD_DIR.glob("*.mp4"))
+    video_files = list(UPLOAD_DIR.glob("*.webm")) + \
+        list(UPLOAD_DIR.glob("*.mp4"))
 
     for video_path in video_files:
         if "temp_" in video_path.name:
@@ -501,7 +550,8 @@ def get_history():
         session_id = video_path.stem
         json_path = UPLOAD_DIR / f"{session_id}.json"
         file_stat = video_path.stat()
-        creation_time = datetime.fromtimestamp(file_stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+        creation_time = datetime.fromtimestamp(
+            file_stat.st_mtime).strftime("%Y-%m-%d %H:%M")
 
         session_data = {
             "id": session_id, "date": creation_time, "duration": "Unknown",
@@ -511,7 +561,8 @@ def get_history():
             try:
                 with open(json_path, "r") as f:
                     saved_data = json.load(f)
-                    session_data["duration"] = saved_data.get("duration", "Unknown")
+                    session_data["duration"] = saved_data.get(
+                        "duration", "Unknown")
                     session_data["timeline"] = saved_data.get("timeline", [])
                     if "date" in saved_data:
                         session_data["date"] = saved_data["date"]
@@ -547,8 +598,10 @@ def _build_timeline_svg(timeline, total_secs: int, width: int = 740, height: int
         dur = max(0, end - start)
         x = (start / total_secs) * width
         w = max(1.5, (dur / total_secs) * width)
-        color = colors.get(e.emotion.lower() if e.emotion else 'neutral', '#94a3b8')
-        rects.append(f'<rect x="{x:.1f}" y="0" width="{w:.1f}" height="{height}" fill="{color}"/>')
+        color = colors.get(
+            e.emotion.lower() if e.emotion else 'neutral', '#94a3b8')
+        rects.append(
+            f'<rect x="{x:.1f}" y="0" width="{w:.1f}" height="{height}" fill="{color}"/>')
 
     ticks = []
     for frac in [0, 0.25, 0.5, 0.75, 1.0]:
@@ -572,12 +625,15 @@ def _build_timeline_svg(timeline, total_secs: int, width: int = 740, height: int
 
 @app.get("/report/{session_id}", response_class=HTMLResponse)
 def generate_report(session_id: int, db: Session = Depends(get_db)):
-    session = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
+    session = db.query(SessionRecord).filter(
+        SessionRecord.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    patient = db.query(Patient).filter(Patient.id == session.patient_id).first()
-    notes = db.query(Note).filter(Note.session_id == session_id).order_by(Note.seconds).all()
+    patient = db.query(Patient).filter(
+        Patient.id == session.patient_id).first()
+    notes = db.query(Note).filter(Note.session_id ==
+                                  session_id).order_by(Note.seconds).all()
     timeline = sorted(session.timeline, key=lambda t: t.seconds)
 
     duration_secs = _parse_seconds(session.duration) if session.duration else 0
@@ -590,12 +646,14 @@ def generate_report(session_id: int, db: Session = Depends(get_db)):
     }
     distribution: dict = {}
     for i, e in enumerate(timeline):
-        end = timeline[i + 1].seconds if i < len(timeline) - 1 else duration_secs
+        end = timeline[i +
+                       1].seconds if i < len(timeline) - 1 else duration_secs
         dur = max(0, end - e.seconds)
         emo = (e.emotion or 'neutral').lower()
         distribution[emo] = distribution.get(emo, 0) + dur
 
-    dist_sorted = sorted(distribution.items(), key=lambda x: x[1], reverse=True)
+    dist_sorted = sorted(distribution.items(),
+                         key=lambda x: x[1], reverse=True)
     dominant = dist_sorted[0][0] if dist_sorted else 'neutral'
     dominant_color = emo_colors.get(dominant, '#94a3b8')
 
@@ -621,7 +679,8 @@ def generate_report(session_id: int, db: Session = Depends(get_db)):
     for e in timeline:
         emo = (e.emotion or 'neutral').lower()
         if emo in distress and emo not in seen:
-            key_moments.append((e.timestamp_str, f'First {emo} detected', e.confidence or 0, emo))
+            key_moments.append(
+                (e.timestamp_str, f'First {emo} detected', e.confidence or 0, emo))
             seen.add(emo)
     if timeline:
         peak = max(timeline, key=lambda e: e.confidence or 0)
@@ -670,7 +729,8 @@ def generate_report(session_id: int, db: Session = Depends(get_db)):
 
     patient_name = html_module.escape(patient.name if patient else 'Unknown')
     patient_mrn = html_module.escape(patient.external_id if patient else 'N/A')
-    session_date = session.date_recorded.strftime('%B %d, %Y') if session.date_recorded else 'N/A'
+    session_date = session.date_recorded.strftime(
+        '%B %d, %Y') if session.date_recorded else 'N/A'
 
     safe_patient_name = patient_name.replace('"', '').replace("'", '')
     pdf_filename = f"report_{safe_patient_name.replace(' ', '_')}_session{session_id}.pdf"
@@ -811,18 +871,18 @@ def get_trends(patient_id: int, db: Session = Depends(get_db)):
         delta = _avg(second_half, emo) - _avg(first_half, emo)
         if delta > 10:
             insights.append({"type": "warning", "emotion": emo,
-                              "message": f"{emo.capitalize()} has increased by {delta:.0f}% across recent sessions."})
+                             "message": f"{emo.capitalize()} has increased by {delta:.0f}% across recent sessions."})
         elif delta < -10:
             insights.append({"type": "positive", "emotion": emo,
-                              "message": f"{emo.capitalize()} has decreased by {abs(delta):.0f}% — improving trend."})
+                             "message": f"{emo.capitalize()} has decreased by {abs(delta):.0f}% — improving trend."})
     for emo in ['happy', 'neutral']:
         delta = _avg(second_half, emo) - _avg(first_half, emo)
         if delta > 10:
             insights.append({"type": "positive", "emotion": emo,
-                              "message": f"{emo.capitalize()} has increased by {delta:.0f}% — positive trend."})
+                             "message": f"{emo.capitalize()} has increased by {delta:.0f}% — positive trend."})
         elif delta < -10:
             insights.append({"type": "warning", "emotion": emo,
-                              "message": f"{emo.capitalize()} has decreased by {abs(delta):.0f}% across recent sessions."})
+                             "message": f"{emo.capitalize()} has decreased by {abs(delta):.0f}% across recent sessions."})
 
     return {"insights": insights}
 
@@ -852,7 +912,8 @@ def get_notes(session_id: int, db: Session = Depends(get_db)):
 
 @app.post("/sessions/{session_id}/notes")
 def add_note(session_id: int, body: NoteIn, db: Session = Depends(get_db)):
-    session = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
+    session = db.query(SessionRecord).filter(
+        SessionRecord.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     note = Note(
@@ -899,7 +960,8 @@ async def _finalize_session(
         try:
             def _export_audio():
                 buf = io.BytesIO(audio_data)
-                AudioSegment.from_file(buf, format="webm").export(temp_audio_path, format="wav")
+                AudioSegment.from_file(buf, format="webm").export(
+                    temp_audio_path, format="wav")
             await asyncio.to_thread(_export_audio)
         except Exception as e:
             print(f"⚠️  Audio export error: {e}")
@@ -909,7 +971,8 @@ async def _finalize_session(
         if has_audio:
             command = [
                 "ffmpeg", "-y",
-                "-i", str(temp_video_path), "-i", str(temp_audio_path),
+                "-i", str(temp_video_path), "-i", str(
+                    temp_video_mp4), "-i", str(temp_audio_path),
                 "-c:v", "copy", "-c:a", "libopus", str(final_output_path)
             ]
         else:
@@ -922,15 +985,18 @@ async def _finalize_session(
             subprocess.run, command,
             **{"check": True, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
         )
-        if temp_video_path.exists():
-            await asyncio.to_thread(os.remove, temp_video_path)
-        if has_audio and temp_audio_path.exists():
-            await asyncio.to_thread(os.remove, temp_audio_path)
-        print("✅ Session saved.")
+        # Updated Cleanup: Remove all three temporary source files
+        for temp_path in [temp_video_path, temp_video_mp4, temp_audio_path]:
+            if temp_path.exists():
+                await asyncio.to_thread(os.remove, temp_path)
+
+        print(f"✅ Session saved in both WebM and MP4 formats.")
     except Exception as e:
         print(f"❌ FFmpeg mux failed: {e}")
         if temp_video_path.exists():
-            await asyncio.to_thread(os.rename, temp_video_path, final_output_path)
+            await asyncio.to_thread(os.replace, temp_video_path, final_output_path)
+        if temp_video_mp4.exists():
+            await asyncio.to_thread(os.replace, temp_video_mp4, final_mp4)
 
     duration_delta = int(time.time() - start_time)
     duration_str = f"{duration_delta // 60:02}:{duration_delta % 60:02}"
@@ -948,17 +1014,18 @@ async def _finalize_session(
     def _save_to_db():
         db = SessionLocal()
         try:
-            record = db.query(SessionRecord).filter(SessionRecord.id == session_db_id).first()
+            record = db.query(SessionRecord).filter(
+                SessionRecord.id == session_db_id).first()
             if record:
                 record.duration = duration_str
-                record.video_url = f"/uploads/{session_id}.webm"
+                record.video_url = f"/uploads/{session_id}.mp4"
                 db.commit()
                 db.refresh(record)
                 record_id = record.id
             else:
                 fallback = SessionRecord(
                     patient_id=patient_id, session_uuid=session_id,
-                    duration=duration_str, video_url=f"/uploads/{session_id}.webm"
+                    duration=duration_str, video_url=f"/uploads/{session_id}.mp4"
                 )
                 db.add(fallback)
                 db.commit()
@@ -986,6 +1053,7 @@ async def _finalize_session(
 
     print(f"✅ Session {session_id} finalization complete.")
 
+
 class SessionManager:
     def __init__(self):
         # Maps patient_id -> session state
@@ -995,13 +1063,13 @@ class SessionManager:
         await websocket.accept()
         if patient_id not in self.active_sessions:
             self.active_sessions[patient_id] = {
-                "child": None, 
+                "child": None,
                 "therapists": [],
                 "current_page": None,
                 "current_emotion": "neutral",
                 "current_scores": {}
             }
-            
+
         if role == "child":
             self.active_sessions[patient_id]["child"] = websocket
         elif role == "therapist":
@@ -1013,7 +1081,8 @@ class SessionManager:
                 self.active_sessions[patient_id]["child"] = None
             elif role == "therapist":
                 if websocket in self.active_sessions[patient_id]["therapists"]:
-                    self.active_sessions[patient_id]["therapists"].remove(websocket)
+                    self.active_sessions[patient_id]["therapists"].remove(
+                        websocket)
 
     async def broadcast_to_therapists(self, patient_id: int, message: dict):
         if patient_id in self.active_sessions:
@@ -1029,11 +1098,19 @@ class SessionManager:
             self.active_sessions[patient_id]["current_emotion"] = emotion
             self.active_sessions[patient_id]["current_scores"] = scores
 
+    def set_current_page(self, patient_id: int, page: int):
+        if patient_id in self.active_sessions:
+            self.active_sessions[patient_id]["current_page"] = page
+
+
 manager = SessionManager()
 # ------------------- WEBSOCKET STREAM -------------------
 # ------------------- WEBSOCKET STREAM -------------------
+
+
 @app.websocket("/ws/stream/{patient_id}/{role}")
 async def stream(ws: WebSocket, patient_id: int, role: str):
+    session_id = None
     # 1. Validation & Initialization
     if role not in ["child", "therapist"]:
         await ws.close(code=1008, reason="Invalid role. Must be 'child' or 'therapist'.")
@@ -1056,6 +1133,9 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
         # Video Writer (5 FPS for local processing stability)
         fourcc = cv2.VideoWriter_fourcc(*'vp80')
         out = cv2.VideoWriter(str(temp_video_path), fourcc, 5.0, (640, 480))
+        out_mp4 = cv2.VideoWriter(
+            str(temp_video_path_mp4), fourcc_mp4, 5.0, (640, 480))
+
         audio_buffer = io.BytesIO()
 
         start_time = time.time()
@@ -1068,9 +1148,9 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
         db = SessionLocal()
         try:
             rec = SessionRecord(
-                patient_id=patient_id, 
+                patient_id=patient_id,
                 session_uuid=session_id,
-                duration="00:00", 
+                duration="00:00",
                 video_url=""
             )
             db.add(rec)
@@ -1082,11 +1162,11 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
             session_db_id = 0
         finally:
             db.close()
-        
+
         # Notify both sides that recording has started
         await ws.send_json({"status": "session_started", "session_db_id": session_db_id})
         await manager.broadcast_to_therapists(patient_id, {
-            "event": "session_started", 
+            "event": "session_started",
             "session_db_id": session_db_id
         })
 
@@ -1181,7 +1261,8 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
                 # --- VIDEO PROCESSING ---
                 if "image" in data:
                     img_bytes = base64.b64decode(data["image"].split(",")[-1])
-                    frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+                    frame = cv2.imdecode(np.frombuffer(
+                        img_bytes, np.uint8), cv2.IMREAD_COLOR)
                     if frame is not None:
                         resized = cv2.resize(frame, (640, 480))
                         out.write(resized)
@@ -1189,29 +1270,33 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
                         # Analyze emotion every 3 frames to keep CPU usage low
                         if frame_count % 3 == 0:
                             v_res = await asyncio.to_thread(engine_state.process_video, resized)
-                            if v_res: last_v_scores = v_res
+                            if v_res:
+                                last_v_scores = v_res
 
                 # --- AUDIO PROCESSING ---
                 if data.get("audio"):
                     try:
                         audio_b64 = data["audio"]
-                        audio_bytes = base64.b64decode(audio_b64.split(",")[-1])
+                        audio_bytes = base64.b64decode(
+                            audio_b64.split(",")[-1])
                         audio_buffer.write(audio_bytes)
                         a_res = await asyncio.to_thread(engine_state.process_audio, audio_b64)
-                        if a_res: last_a_scores = a_res
+                        if a_res:
+                            last_a_scores = a_res
                     except:
                         pass
 
                 # --- EMOTION FUSION & BROADCAST ---
-                final_emotion, final_scores = engine_state.fusion(last_v_scores, last_a_scores)
-                
+                final_emotion, final_scores = engine_state.fusion(
+                    last_v_scores, last_a_scores)
+
                 # Update Session Manager for GET requests
                 manager.update_emotion(patient_id, final_emotion, final_scores)
 
                 # Log emotion shifts to the timeline
                 if not session_timeline or session_timeline[-1]['emotion'] != final_emotion:
                     session_timeline.append({
-                        "time": timestamp, 
+                        "time": timestamp,
                         "seconds": elapsed,
                         "emotion": final_emotion,
                         "confidence": float(final_scores.get(final_emotion, 0))
@@ -1220,11 +1305,20 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
                 # Send EVERYTHING to the Therapist Dashboard
                 await manager.broadcast_to_therapists(patient_id, {
                     "event": "live_stream",
-                    "image": data.get("image"),       
+                    "image": data.get("image"),
                     "emotion": final_emotion,
                     "scores": final_scores,
                     "timestamp": timestamp
                 })
+
+                # Send back to the child so it can update its screen and clear the flight limiter
+                try:
+                    await ws.send_json({
+                        "emotion": final_emotion,
+                        "timestamp": timestamp
+                    })
+                except:
+                    pass
 
             elif role == "therapist":
                 # Handle pings to keep connection alive
@@ -1236,47 +1330,54 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
     finally:
         # 3. Cleanup & Recording Finalization
         manager.disconnect(ws, patient_id, role)
-        
+
         if role == "child":
             try:
                 out.release()
+                out_mp4.release()
             except:
                 pass
-                
+
             # Run finalization (Muxing video/audio, saving JSON and DB)
-            await _finalize_session(
-                session_id, temp_video_path, temp_audio_path, final_output_path,
-                json_path, audio_buffer.getvalue(), start_time, session_timeline,
-                patient_id, session_db_id
-            )
-            
+            if session_id:
+                await _finalize_session(
+                    session_id, temp_video_path, temp_video_path_mp4, temp_audio_path,
+                    final_output_path, final_output_mp4, json_path, audio_buffer.getvalue(),
+                    start_time, session_timeline, patient_id, session_db_id
+                )
+
             await manager.broadcast_to_therapists(patient_id, {"event": "stream_disconnected"})
+
+
 class HardwarePageUpdate(BaseModel):
     page: int
+
 
 @app.post("/sessions/{patient_id}/page")
 async def update_hardware_book_page(patient_id: int, payload: HardwarePageUpdate):
     """Endpoint for the physical hardware book to update the current page."""
     if patient_id not in manager.active_sessions:
-        raise HTTPException(status_code=404, detail="Patient does not have an active session.")
-    
+        raise HTTPException(
+            status_code=404, detail="Patient does not have an active session.")
+
     # Update the state in memory
     manager.set_current_page(patient_id, payload.page)
-    
+
     # Instantly notify the therapist dashboard that the child turned the page
     await manager.broadcast_to_therapists(patient_id, {
         "event": "page_changed",
         "page": payload.page
     })
-    
+
     return {"status": "success", "current_page": payload.page}
+
 
 @app.get("/sessions/{patient_id}/current_emotion")
 def get_current_live_emotion(patient_id: int):
     """Endpoint to fetch the latest detected emotion for a patient."""
     if patient_id not in manager.active_sessions:
         return {"status": "offline", "emotion": "neutral", "page": None}
-    
+
     session_data = manager.active_sessions[patient_id]
     return {
         "status": "live",
