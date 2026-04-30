@@ -1,0 +1,198 @@
+{
+  "session_id": "session_1777544098",
+  "date": "2026-04-30 14:19",
+  "duration": "04:48",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:04",
+      "seconds": 4,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:04",
+      "seconds": 4,
+      "emotion": "neutral",
+      "confidence": 0.6380329418788566
+    },
+    {
+      "time": "00:12",
+      "seconds": 12,
+      "emotion": "happy",
+      "confidence": 0.48794418884298074
+    },
+    {
+      "time": "00:13",
+      "seconds": 13,
+      "emotion": "emotion_choice: Like",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "emotion_choice"
+    },
+    {
+      "time": "00:13",
+      "seconds": 13,
+      "emotion": "happy",
+      "confidence": 0.48794418884298074
+    },
+    {
+      "time": "00:14",
+      "seconds": 14,
+      "emotion": "neutral",
+      "confidence": 0.5373759988344814
+    },
+    {
+      "time": "00:16",
+      "seconds": 16,
+      "emotion": "happy",
+      "confidence": 0.5754216433086227
+    },
+    {
+      "time": "00:19",
+      "seconds": 19,
+      "emotion": "neutral",
+      "confidence": 0.4848098877065746
+    },
+    {
+      "time": "00:19",
+      "seconds": 19,
+      "emotion": "attribute_choice: Bumpy",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "attribute_choice"
+    },
+    {
+      "time": "00:19",
+      "seconds": 19,
+      "emotion": "neutral",
+      "confidence": 0.4848098877065746
+    },
+    {
+      "time": "00:48",
+      "seconds": 48,
+      "emotion": "happy",
+      "confidence": 0.4534784885609276
+    },
+    {
+      "time": "00:51",
+      "seconds": 51,
+      "emotion": "neutral",
+      "confidence": 0.5622907686914694
+    },
+    {
+      "time": "01:15",
+      "seconds": 75,
+      "emotion": "angry",
+      "confidence": 0.3799593986954013
+    },
+    {
+      "time": "01:21",
+      "seconds": 81,
+      "emotion": "happy",
+      "confidence": 0.4271239157487615
+    },
+    {
+      "time": "02:00",
+      "seconds": 120,
+      "emotion": "neutral",
+      "confidence": 0.4011660991354758
+    },
+    {
+      "time": "02:03",
+      "seconds": 123,
+      "emotion": "happy",
+      "confidence": 0.41572106177081514
+    },
+    {
+      "time": "02:06",
+      "seconds": 126,
+      "emotion": "neutral",
+      "confidence": 0.3564879844644459
+    },
+    {
+      "time": "02:12",
+      "seconds": 132,
+      "emotion": "happy",
+      "confidence": 0.39945526260189795
+    },
+    {
+      "time": "02:24",
+      "seconds": 144,
+      "emotion": "sad",
+      "confidence": 0.4302737685806962
+    },
+    {
+      "time": "02:27",
+      "seconds": 147,
+      "emotion": "happy",
+      "confidence": 0.3508135999162538
+    },
+    {
+      "time": "02:42",
+      "seconds": 162,
+      "emotion": "neutral",
+      "confidence": 0.34483661397371373
+    },
+    {
+      "time": "02:45",
+      "seconds": 165,
+      "emotion": "happy",
+      "confidence": 0.46585936472579575
+    },
+    {
+      "time": "02:51",
+      "seconds": 171,
+      "emotion": "neutral",
+      "confidence": 0.3266619063320995
+    },
+    {
+      "time": "03:15",
+      "seconds": 195,
+      "emotion": "happy",
+      "confidence": 0.42044060928995663
+    },
+    {
+      "time": "03:18",
+      "seconds": 198,
+      "emotion": "neutral",
+      "confidence": 0.41893854820480997
+    },
+    {
+      "time": "03:21",
+      "seconds": 201,
+      "emotion": "happy",
+      "confidence": 0.43486386593367676
+    },
+    {
+      "time": "03:36",
+      "seconds": 216,
+      "emotion": "neutral",
+      "confidence": 0.3992176280039236
+    },
+    {
+      "time": "03:48",
+      "seconds": 228,
+      "emotion": "happy",
+      "confidence": 0.4943747884838134
+    },
+    {
+      "time": "04:27",
+      "seconds": 267,
+      "emotion": "neutral",
+      "confidence": 0.2734893568623191
+    },
+    {
+      "time": "04:36",
+      "seconds": 276,
+      "emotion": "happy",
+      "confidence": 0.43135073220220643
+    }
+  ]
+}

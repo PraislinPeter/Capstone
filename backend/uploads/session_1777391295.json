@@ -1,0 +1,87 @@
+{
+  "session_id": "session_1777391295",
+  "date": "2026-04-28 19:50",
+  "duration": "02:07",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:07",
+      "seconds": 7,
+      "emotion": "sad",
+      "confidence": 0.4132867608908026
+    },
+    {
+      "time": "00:07",
+      "seconds": 7,
+      "emotion": "neutral",
+      "confidence": 0.33351529516248407
+    },
+    {
+      "time": "00:08",
+      "seconds": 8,
+      "emotion": "happy",
+      "confidence": 0.4892027247504874
+    },
+    {
+      "time": "00:10",
+      "seconds": 10,
+      "emotion": "neutral",
+      "confidence": 0.5084931369915183
+    },
+    {
+      "time": "00:13",
+      "seconds": 13,
+      "emotion": "happy",
+      "confidence": 0.45867011827263143
+    },
+    {
+      "time": "00:16",
+      "seconds": 16,
+      "emotion": "neutral",
+      "confidence": 0.3292639980065162
+    },
+    {
+      "time": "00:19",
+      "seconds": 19,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:19",
+      "seconds": 19,
+      "emotion": "neutral",
+      "confidence": 0.509123873079487
+    },
+    {
+      "time": "00:59",
+      "seconds": 59,
+      "emotion": "Touched Mesh",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:59",
+      "seconds": 59,
+      "emotion": "neutral",
+      "confidence": 0.8730841758471732
+    },
+    {
+      "time": "01:33",
+      "seconds": 93,
+      "emotion": "happy",
+      "confidence": 0.5548506449755557
+    },
+    {
+      "time": "01:36",
+      "seconds": 96,
+      "emotion": "neutral",
+      "confidence": 0.5875548119152373
+    }
+  ]
+}

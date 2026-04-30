@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, ChevronLeft, ChevronRight, PlayCircle } from 'lucide-react';
+import { WS_BASE } from './config';
 
 const TEXTURES = [
   { id: 1, name: "Beads", type: "bumpy", color: "bg-red-600", pattern: "radial-gradient(circle, #fff 10%, transparent 10%)", bgSize: "10px 10px" },
@@ -53,7 +54,7 @@ const startSession = async () => {
 
     // 2. Initialize WebSocket
     // Uses the camelCase 'patientId' prop to match the backend route
-    const socket = new WebSocket(`ws://localhost:8000/ws/stream/${patientId}/child`);
+    const socket = new WebSocket(`${WS_BASE}/ws/stream/${patientId}/child`);
 
     socket.onopen = () => {
       console.log("✅ Child websocket connected");
@@ -269,7 +270,7 @@ const startStreamingLoop = () => {
 
   return (
     <div className="fixed inset-0 bg-white flex flex-col items-center justify-center p-4 lg:p-12 overflow-hidden">
-      <video ref={videoRef} autoPlay playsInline className="absolute opacity-0 pointer-events-none w-1 h-1" />
+      <video ref={videoRef} autoPlay playsInline muted className="absolute opacity-0 pointer-events-none w-1 h-1" />
 
       {breathingBreak && <BreathingBreak onReady={handleBreakEnd} />}
 

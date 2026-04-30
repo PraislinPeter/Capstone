@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation, useParams, BrowserRouter, Routes, Route } from 'react-router-dom';
+import { API_BASE, WS_BASE } from '../config';
 import {
   Clock,
   Circle,
@@ -75,7 +76,7 @@ export default function DashboardView() {
     setLiveImage(null);
 
     // Connect as THERAPIST (Localhost for local development)
-    ws.current = new WebSocket(`ws://localhost:8000/ws/stream/${patient.id}/therapist`);
+    ws.current = new WebSocket(`${WS_BASE}/ws/stream/${patient.id}/therapist`);
 
     ws.current.onopen = () => {
       setIsConnected(true);
@@ -216,7 +217,7 @@ export default function DashboardView() {
     if (!noteText.trim() || !liveSessionId) return;
     const [m, s] = sessionTime.split(':').map(Number);
     const seconds = m * 60 + (s || 0);
-    fetch(`http://localhost:8000/sessions/${liveSessionId}/notes`, {
+    fetch(`${API_BASE}/sessions/${liveSessionId}/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ seconds, timestamp_str: sessionTime, note_text: noteText.trim() }),

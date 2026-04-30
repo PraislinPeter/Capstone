@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, UserCog } from 'lucide-react';
+import { API_BASE } from '../config';
 
 export default function PatientEdit() {
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ export default function PatientEdit() {
   // 1. Fetch SPECIFIC Patient Data on Mount
   useEffect(() => {
     // CHANGE: Fetch specific ID instead of the whole list
-    fetch(`http://localhost:8000/patients/${id}`) 
+    fetch(`${API_BASE}/patients/${id}`) 
       .then(res => res.json())
       .then(data => {
         // Set state with the data from the backend
@@ -45,7 +46,7 @@ export default function PatientEdit() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`http://localhost:8000/patients/${id}`, {
+      const res = await fetch(`${API_BASE}/patients/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
