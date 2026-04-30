@@ -514,7 +514,7 @@ def register_patient(patient_data: dict, db: Session = Depends(get_db)):
 def get_patient_history(patient_id: int, db: Session = Depends(get_db)):
     sessions = (
         db.query(SessionRecord)
-        .filter(SessionRecord.patient_id == patient_id)
+        .filter(SessionRecord.patient_id == patient_id, SessionRecord.video_url != "")
         .options(joinedload(SessionRecord.timeline))
         .order_by(SessionRecord.date_recorded.desc())
         .all()
@@ -534,6 +534,7 @@ def get_patient_history(patient_id: int, db: Session = Depends(get_db)):
             ]
         }
         for s in sessions
+        if s.video_url
     ]
 
 
@@ -943,10 +944,8 @@ def delete_note(note_id: int, db: Session = Depends(get_db)):
 async def _finalize_session(
     session_id: str,
     temp_video_path: Path,
-    temp_video_mp4: Path,
     temp_audio_path: Path,
     final_output_path: Path,
-    final_mp4: Path,
     json_path: Path,
     audio_data: bytes,
     start_time: float,
@@ -980,7 +979,6 @@ async def _finalize_session(
             command = [
                 "ffmpeg", "-y",
                 "-i", str(temp_video_path),
-                "-i", str(temp_video_mp4), "-c:v", "copy", str(final_mp4),
                 "-c:v", "copy", str(final_output_path)
             ]
         await asyncio.to_thread(
@@ -1128,17 +1126,12 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
 
         # Paths for local recording
         temp_video_path = UPLOAD_DIR / f"temp_vid_{timestamp_id}.webm"
-        temp_video_path_mp4 = UPLOAD_DIR / f"temp_vid_{timestamp_id}.mp4"
         temp_audio_path = UPLOAD_DIR / f"temp_aud_{timestamp_id}.wav"
-
         final_output_path = UPLOAD_DIR / f"{session_id}.webm"
-        final_output_mp4 = UPLOAD_DIR / f"{session_id}.mp4"
         json_path = UPLOAD_DIR / f"{session_id}.json"
 
         # Video Writer (5 FPS for local processing stability)
         fourcc = cv2.VideoWriter_fourcc(*'vp80')
-        fourcc_mp4 = cv2.VideoWriter_fourcc(*'mp4v')
-
         out = cv2.VideoWriter(str(temp_video_path), fourcc, 5.0, (640, 480))
         out_mp4 = cv2.VideoWriter(
             str(temp_video_path_mp4), fourcc_mp4, 5.0, (640, 480))
@@ -1188,27 +1181,31 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
 
                 # --- SENSORY INTERACTION LOGIC ---
                 if data.get("event") == "child_interaction":
+                    # Capture the name provided by the frontend
                     texture_name = data.get("texture_name", "Unknown Texture")
+                    
+                    # Broadcast to therapists
                     await manager.broadcast_to_therapists(patient_id, {
                         "event": "texture_tapped",
                         "texture_id": data.get("page"),
-                        "texture_name": texture_name,
+                        "texture_name": texture_name, # Critical: Matches the frontend key
                         "timestamp": timestamp
                     })
+                    
+                    # Log to timeline
                     session_timeline.append({
-                        "time": timestamp, "seconds": elapsed,
+                        "time": timestamp, 
+                        "seconds": elapsed,
                         "emotion": f"Touched {texture_name}",
-                        "confidence": 1.0, "is_interaction": True,
-                        "feedback_type": None
+                        "confidence": 1.0,
+                        "is_interaction": True
                     })
                     continue
 
-                # --- CHILD FEEDBACK (emotion_choice / attribute_choice) ---
                 if data.get("event") == "child_feedback":
                     feedback_type = data.get("feedback_type", "")
                     value = data.get("value", "")
                     texture_name = data.get("texture_name", "")
-                    label = f"{texture_name}: {value}" if texture_name else value
                     await manager.broadcast_to_therapists(patient_id, {
                         "event": "child_feedback",
                         "feedback_type": feedback_type,
@@ -1217,26 +1214,28 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
                         "timestamp": timestamp
                     })
                     session_timeline.append({
-                        "time": timestamp, "seconds": elapsed,
-                        "emotion": label,
-                        "confidence": 1.0, "is_interaction": True,
+                        "time": timestamp,
+                        "seconds": elapsed,
+                        "emotion": f"{feedback_type}: {value}",
+                        "confidence": 1.0,
+                        "is_interaction": True,
                         "feedback_type": feedback_type
                     })
                     continue
 
-                # --- SENSORY BREAK ---
                 if data.get("event") == "break_started":
                     texture_name = data.get("texture_name", "")
-                    label = f"Sensory Break: {texture_name}" if texture_name else "Sensory Break"
                     await manager.broadcast_to_therapists(patient_id, {
                         "event": "break_started",
                         "texture_name": texture_name,
                         "timestamp": timestamp
                     })
                     session_timeline.append({
-                        "time": timestamp, "seconds": elapsed,
-                        "emotion": label,
-                        "confidence": 1.0, "is_interaction": True,
+                        "time": timestamp,
+                        "seconds": elapsed,
+                        "emotion": f"Sensory Break: {texture_name}" if texture_name else "Sensory Break",
+                        "confidence": 1.0,
+                        "is_interaction": True,
                         "feedback_type": "break_started"
                     })
                     continue
@@ -1247,9 +1246,11 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
                         "timestamp": timestamp
                     })
                     session_timeline.append({
-                        "time": timestamp, "seconds": elapsed,
+                        "time": timestamp,
+                        "seconds": elapsed,
                         "emotion": "Break Ended",
-                        "confidence": 1.0, "is_interaction": True,
+                        "confidence": 1.0,
+                        "is_interaction": True,
                         "feedback_type": "break_ended"
                     })
                     continue
@@ -1265,7 +1266,6 @@ async def stream(ws: WebSocket, patient_id: int, role: str):
                     if frame is not None:
                         resized = cv2.resize(frame, (640, 480))
                         out.write(resized)
-                        out_mp4.write(resized)
                         frame_count += 1
                         # Analyze emotion every 3 frames to keep CPU usage low
                         if frame_count % 3 == 0:

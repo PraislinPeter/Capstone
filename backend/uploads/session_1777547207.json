@@ -1,0 +1,128 @@
+{
+  "session_id": "session_1777547207",
+  "date": "2026-04-30 15:08",
+  "duration": "01:22",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:10",
+      "seconds": 10,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:10",
+      "seconds": 10,
+      "emotion": "neutral",
+      "confidence": 0.39696884709631525
+    },
+    {
+      "time": "00:18",
+      "seconds": 18,
+      "emotion": "angry",
+      "confidence": 0.4437966478006153
+    },
+    {
+      "time": "00:24",
+      "seconds": 24,
+      "emotion": "neutral",
+      "confidence": 0.45752483864804483
+    },
+    {
+      "time": "00:26",
+      "seconds": 26,
+      "emotion": "sad",
+      "confidence": 0.36943020312167196
+    },
+    {
+      "time": "00:27",
+      "seconds": 27,
+      "emotion": "neutral",
+      "confidence": 0.5202587247669488
+    },
+    {
+      "time": "00:30",
+      "seconds": 30,
+      "emotion": "happy",
+      "confidence": 0.36538625518465073
+    },
+    {
+      "time": "00:31",
+      "seconds": 31,
+      "emotion": "neutral",
+      "confidence": 0.28608632591175986
+    },
+    {
+      "time": "00:32",
+      "seconds": 32,
+      "emotion": "happy",
+      "confidence": 0.4737351042388533
+    },
+    {
+      "time": "00:34",
+      "seconds": 34,
+      "emotion": "neutral",
+      "confidence": 0.462902980836772
+    },
+    {
+      "time": "00:57",
+      "seconds": 57,
+      "emotion": "emotion_choice: Like",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "emotion_choice"
+    },
+    {
+      "time": "00:57",
+      "seconds": 57,
+      "emotion": "neutral",
+      "confidence": 0.4871611972191177
+    },
+    {
+      "time": "01:03",
+      "seconds": 63,
+      "emotion": "attribute_choice: Hard",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "attribute_choice"
+    },
+    {
+      "time": "01:04",
+      "seconds": 64,
+      "emotion": "neutral",
+      "confidence": 0.4871611972191177
+    },
+    {
+      "time": "01:08",
+      "seconds": 68,
+      "emotion": "attribute_choice: Bumpy",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "attribute_choice"
+    },
+    {
+      "time": "01:08",
+      "seconds": 68,
+      "emotion": "neutral",
+      "confidence": 0.4871611972191177
+    },
+    {
+      "time": "01:15",
+      "seconds": 75,
+      "emotion": "sad",
+      "confidence": 0.4443253442934023
+    },
+    {
+      "time": "01:15",
+      "seconds": 75,
+      "emotion": "neutral",
+      "confidence": 0.5377824047865692
+    }
+  ]
+}

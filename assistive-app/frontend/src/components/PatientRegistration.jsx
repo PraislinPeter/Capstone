@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserPlus, Save, X } from 'lucide-react';
+import { API_BASE } from '../config';
 
 export default function PatientRegistration({ onComplete }) {
   const [formData, setFormData] = useState({
@@ -14,7 +15,7 @@ export default function PatientRegistration({ onComplete }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('http://localhost:8000/patients', {
+      const res = await fetch(`${API_BASE}/patients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)

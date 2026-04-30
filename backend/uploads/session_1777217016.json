@@ -1,0 +1,37 @@
+{
+  "session_id": "session_1777217016",
+  "date": "2026-04-26 19:24",
+  "duration": "00:56",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:06",
+      "seconds": 6,
+      "emotion": "happy",
+      "confidence": 0.8848679452241942
+    },
+    {
+      "time": "00:07",
+      "seconds": 7,
+      "emotion": "neutral",
+      "confidence": 0.5467715732045738
+    },
+    {
+      "time": "00:55",
+      "seconds": 55,
+      "emotion": "happy",
+      "confidence": 0.5602120031349508
+    },
+    {
+      "time": "00:55",
+      "seconds": 55,
+      "emotion": "neutral",
+      "confidence": 0.5424069108760238
+    }
+  ]
+}

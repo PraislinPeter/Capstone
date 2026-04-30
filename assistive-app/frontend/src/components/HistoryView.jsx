@@ -5,6 +5,7 @@ import {
   FileText, MessageSquare, MessageCircle, Wind, Plus, Trash2, AlertTriangle, CheckCircle, Sparkles
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { API_BASE } from '../config';
 import {
   PieChart, Pie, Tooltip as ReTooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend
@@ -91,9 +92,10 @@ function SessionList({ sessions, selectedSession, onSelect }) {
 // ── Video Panel ─────────────────────────────────────────────────────────────
 function VideoPanel({ session, videoRef, onTimeUpdate }) {
   const [currentEmotion, setCurrentEmotion] = useState(null);
+  const [videoError, setVideoError] = useState(false);
 
   // Reset overlay when session changes
-  useEffect(() => { setCurrentEmotion(null); }, [session?.id]);
+  useEffect(() => { setCurrentEmotion(null); setVideoError(false); }, [session?.id]);
 
   const handleTimeUpdate = (e) => {
     const t = e.target.currentTime;
@@ -107,20 +109,31 @@ function VideoPanel({ session, videoRef, onTimeUpdate }) {
   };
 
   const emotionStyle = getEmotionStyle(currentEmotion);
+  const hasVideo = !!session.video_url;
 
   return (
     <div className="flex flex-col gap-3 h-full">
       {/* Video */}
       <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-lg relative group">
+        {!hasVideo || videoError ? (
+          <div className="w-full aspect-video flex flex-col items-center justify-center bg-slate-800 text-slate-400 gap-2">
+            <Film size={36} className="opacity-30" />
+            <p className="text-sm font-semibold">
+              {!hasVideo ? 'No recording saved for this session' : 'Video unavailable'}
+            </p>
+          </div>
+        ) : (
         <video
           key={session.id}
           ref={videoRef}
           controls
           preload="auto"
           className="w-full aspect-video object-contain bg-black"
-          src={`http://localhost:8000${session.video_url}`}
+          src={`${API_BASE}${session.video_url}`}
           onTimeUpdate={handleTimeUpdate}
+          onError={() => setVideoError(true)}
         />
+        )}
 
         {/* Emotion overlay */}
         {currentEmotion && (
@@ -129,13 +142,15 @@ function VideoPanel({ session, videoRef, onTimeUpdate }) {
           </div>
         )}
 
-        <a
-          href={`http://localhost:8000${session.video_url}`}
-          download
-          className="absolute top-3 right-3 p-2 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
-        >
-          <Download size={15} />
-        </a>
+        {hasVideo && !videoError && (
+          <a
+            href={`${API_BASE}${session.video_url}`}
+            download
+            className="absolute top-3 right-3 p-2 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Download size={15} />
+          </a>
+        )}
       </div>
 
       {/* Session metadata */}
@@ -557,8 +572,8 @@ export default function HistoryView({ patient: propPatient }) {
   useEffect(() => {
     if (!patient?.id) return;
     Promise.all([
-      fetch(`http://localhost:8000/history/${patient.id}`).then(r => r.json()),
-      fetch(`http://localhost:8000/trends/${patient.id}`).then(r => r.json()),
+      fetch(`${API_BASE}/history/${patient.id}`).then(r => r.json()),
+      fetch(`${API_BASE}/trends/${patient.id}`).then(r => r.json()),
     ]).then(([historyData, trendsData]) => {
       setSessions(historyData);
       if (historyData.length > 0) setSelectedSession(historyData[0]);
@@ -568,7 +583,7 @@ export default function HistoryView({ patient: propPatient }) {
 
   useEffect(() => {
     if (!selectedSession?.id) { setNotes([]); return; }
-    fetch(`http://localhost:8000/sessions/${selectedSession.id}/notes`)
+    fetch(`${API_BASE}/sessions/${selectedSession.id}/notes`)
       .then(r => r.json())
       .then(setNotes)
       .catch(() => setNotes([]));
@@ -578,7 +593,7 @@ export default function HistoryView({ patient: propPatient }) {
   const handleAddNote = (noteText) => {
     if (!selectedSession?.id) return;
     const timestamp_str = formatTime(currentVideoSecs);
-    fetch(`http://localhost:8000/sessions/${selectedSession.id}/notes`, {
+    fetch(`${API_BASE}/sessions/${selectedSession.id}/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ seconds: Math.floor(currentVideoSecs), timestamp_str, note_text: noteText }),
@@ -589,7 +604,7 @@ export default function HistoryView({ patient: propPatient }) {
   };
 
   const handleDeleteNote = (noteId) => {
-    fetch(`http://localhost:8000/notes/${noteId}`, { method: 'DELETE' })
+    fetch(`${API_BASE}/notes/${noteId}`, { method: 'DELETE' })
       .then(() => setNotes(prev => prev.filter(n => n.id !== noteId)))
       .catch(() => {});
   };
@@ -626,7 +641,7 @@ export default function HistoryView({ patient: propPatient }) {
           {selectedSession && (
             <button
               onClick={async () => {
-                const res = await fetch(`http://localhost:8000/report/${selectedSession.id}`);
+                const res = await fetch(`${API_BASE}/report/${selectedSession.id}`);
                 const html = await res.text();
                 const blob = new Blob([html], { type: 'text/html' });
                 const url = URL.createObjectURL(blob);

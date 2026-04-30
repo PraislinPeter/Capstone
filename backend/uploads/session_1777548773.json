@@ -1,0 +1,416 @@
+{
+  "session_id": "session_1777548773",
+  "date": "2026-04-30 15:40",
+  "duration": "07:38",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:02",
+      "seconds": 2,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:02",
+      "seconds": 2,
+      "emotion": "neutral",
+      "confidence": 0.9816919398462306
+    },
+    {
+      "time": "00:13",
+      "seconds": 13,
+      "emotion": "fear",
+      "confidence": 0.5365760294494969
+    },
+    {
+      "time": "00:16",
+      "seconds": 16,
+      "emotion": "neutral",
+      "confidence": 0.11576737682735308
+    },
+    {
+      "time": "00:20",
+      "seconds": 20,
+      "emotion": "happy",
+      "confidence": 0.4799254551134132
+    },
+    {
+      "time": "00:42",
+      "seconds": 42,
+      "emotion": "neutral",
+      "confidence": 0.5441962201042715
+    },
+    {
+      "time": "00:48",
+      "seconds": 48,
+      "emotion": "happy",
+      "confidence": 0.5097983909632627
+    },
+    {
+      "time": "01:05",
+      "seconds": 65,
+      "emotion": "neutral",
+      "confidence": 0.1183768064655316
+    },
+    {
+      "time": "01:12",
+      "seconds": 72,
+      "emotion": "fear",
+      "confidence": 0.38382168707646225
+    },
+    {
+      "time": "01:12",
+      "seconds": 72,
+      "emotion": "neutral",
+      "confidence": 0.12162583154929922
+    },
+    {
+      "time": "01:14",
+      "seconds": 74,
+      "emotion": "happy",
+      "confidence": 0.4501002984151214
+    },
+    {
+      "time": "02:19",
+      "seconds": 139,
+      "emotion": "neutral",
+      "confidence": 0.20907108570295765
+    },
+    {
+      "time": "02:20",
+      "seconds": 140,
+      "emotion": "sad",
+      "confidence": 0.4457524486902575
+    },
+    {
+      "time": "02:21",
+      "seconds": 141,
+      "emotion": "neutral",
+      "confidence": 0.5198033506537457
+    },
+    {
+      "time": "02:24",
+      "seconds": 144,
+      "emotion": "sad",
+      "confidence": 0.5584145398807853
+    },
+    {
+      "time": "02:24",
+      "seconds": 144,
+      "emotion": "neutral",
+      "confidence": 0.5452012562929198
+    },
+    {
+      "time": "02:26",
+      "seconds": 146,
+      "emotion": "sad",
+      "confidence": 0.607166009912415
+    },
+    {
+      "time": "02:30",
+      "seconds": 150,
+      "emotion": "neutral",
+      "confidence": 0.4949343067421093
+    },
+    {
+      "time": "02:31",
+      "seconds": 151,
+      "emotion": "sad",
+      "confidence": 0.6293795714355721
+    },
+    {
+      "time": "02:33",
+      "seconds": 153,
+      "emotion": "neutral",
+      "confidence": 0.5746046236217975
+    },
+    {
+      "time": "02:34",
+      "seconds": 154,
+      "emotion": "sad",
+      "confidence": 0.5690623920618288
+    },
+    {
+      "time": "02:36",
+      "seconds": 156,
+      "emotion": "neutral",
+      "confidence": 0.5271713043584
+    },
+    {
+      "time": "02:42",
+      "seconds": 162,
+      "emotion": "sad",
+      "confidence": 0.4737509086762175
+    },
+    {
+      "time": "02:43",
+      "seconds": 163,
+      "emotion": "neutral",
+      "confidence": 0.5808930626170922
+    },
+    {
+      "time": "02:48",
+      "seconds": 168,
+      "emotion": "sad",
+      "confidence": 0.45100591229402875
+    },
+    {
+      "time": "03:47",
+      "seconds": 227,
+      "emotion": "angry",
+      "confidence": 0.3689184908077283
+    },
+    {
+      "time": "03:50",
+      "seconds": 230,
+      "emotion": "emotion_choice: Too Much",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "emotion_choice"
+    },
+    {
+      "time": "03:50",
+      "seconds": 230,
+      "emotion": "Sensory Break: Beads",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "break_started"
+    },
+    {
+      "time": "03:50",
+      "seconds": 230,
+      "emotion": "angry",
+      "confidence": 0.5561280706462144
+    },
+    {
+      "time": "04:20",
+      "seconds": 260,
+      "emotion": "Break Ended",
+      "confidence": 1.0,
+      "is_interaction": true,
+      "feedback_type": "break_ended"
+    },
+    {
+      "time": "04:20",
+      "seconds": 260,
+      "emotion": "angry",
+      "confidence": 0.5561280706462144
+    },
+    {
+      "time": "04:52",
+      "seconds": 292,
+      "emotion": "neutral",
+      "confidence": 0.3866009224513853
+    },
+    {
+      "time": "05:00",
+      "seconds": 300,
+      "emotion": "sad",
+      "confidence": 0.4311364825044366
+    },
+    {
+      "time": "05:10",
+      "seconds": 310,
+      "emotion": "neutral",
+      "confidence": 0.3713562222326467
+    },
+    {
+      "time": "05:14",
+      "seconds": 314,
+      "emotion": "sad",
+      "confidence": 0.4168664370956932
+    },
+    {
+      "time": "05:17",
+      "seconds": 317,
+      "emotion": "neutral",
+      "confidence": 0.13882146824571728
+    },
+    {
+      "time": "05:18",
+      "seconds": 318,
+      "emotion": "sad",
+      "confidence": 0.35698751766263215
+    },
+    {
+      "time": "05:38",
+      "seconds": 338,
+      "emotion": "neutral",
+      "confidence": 0.13797603290533716
+    },
+    {
+      "time": "05:39",
+      "seconds": 339,
+      "emotion": "angry",
+      "confidence": 0.39615609002537094
+    },
+    {
+      "time": "05:40",
+      "seconds": 340,
+      "emotion": "sad",
+      "confidence": 0.37995168961905357
+    },
+    {
+      "time": "05:40",
+      "seconds": 340,
+      "emotion": "neutral",
+      "confidence": 0.06130708107684762
+    },
+    {
+      "time": "05:41",
+      "seconds": 341,
+      "emotion": "sad",
+      "confidence": 0.358815423845028
+    },
+    {
+      "time": "05:43",
+      "seconds": 343,
+      "emotion": "neutral",
+      "confidence": 0.09105431590667433
+    },
+    {
+      "time": "05:45",
+      "seconds": 345,
+      "emotion": "happy",
+      "confidence": 0.4483551979507182
+    },
+    {
+      "time": "05:45",
+      "seconds": 345,
+      "emotion": "neutral",
+      "confidence": 0.06358165864958862
+    },
+    {
+      "time": "05:54",
+      "seconds": 354,
+      "emotion": "sad",
+      "confidence": 0.37351842916691264
+    },
+    {
+      "time": "05:57",
+      "seconds": 357,
+      "emotion": "angry",
+      "confidence": 0.3791808951334626
+    },
+    {
+      "time": "05:58",
+      "seconds": 358,
+      "emotion": "neutral",
+      "confidence": 0.32031413207869275
+    },
+    {
+      "time": "06:01",
+      "seconds": 361,
+      "emotion": "happy",
+      "confidence": 0.39331780655171716
+    },
+    {
+      "time": "06:03",
+      "seconds": 363,
+      "emotion": "neutral",
+      "confidence": 0.427929402393176
+    },
+    {
+      "time": "06:04",
+      "seconds": 364,
+      "emotion": "happy",
+      "confidence": 0.45916719650059507
+    },
+    {
+      "time": "06:04",
+      "seconds": 364,
+      "emotion": "neutral",
+      "confidence": 0.4823218113673745
+    },
+    {
+      "time": "06:19",
+      "seconds": 379,
+      "emotion": "sad",
+      "confidence": 0.515159578868098
+    },
+    {
+      "time": "06:20",
+      "seconds": 380,
+      "emotion": "neutral",
+      "confidence": 0.08114159730212034
+    },
+    {
+      "time": "06:44",
+      "seconds": 404,
+      "emotion": "sad",
+      "confidence": 0.5162882641495201
+    },
+    {
+      "time": "06:44",
+      "seconds": 404,
+      "emotion": "neutral",
+      "confidence": 0.5969015103632666
+    },
+    {
+      "time": "06:45",
+      "seconds": 405,
+      "emotion": "sad",
+      "confidence": 0.5489302282477792
+    },
+    {
+      "time": "06:46",
+      "seconds": 406,
+      "emotion": "neutral",
+      "confidence": 0.5237848544589211
+    },
+    {
+      "time": "06:48",
+      "seconds": 408,
+      "emotion": "happy",
+      "confidence": 0.4763381316114674
+    },
+    {
+      "time": "06:48",
+      "seconds": 408,
+      "emotion": "neutral",
+      "confidence": 0.541593841177299
+    },
+    {
+      "time": "06:50",
+      "seconds": 410,
+      "emotion": "happy",
+      "confidence": 0.522818256996751
+    },
+    {
+      "time": "06:51",
+      "seconds": 411,
+      "emotion": "neutral",
+      "confidence": 0.5111847573998808
+    },
+    {
+      "time": "07:15",
+      "seconds": 435,
+      "emotion": "happy",
+      "confidence": 0.5865752770410146
+    },
+    {
+      "time": "07:33",
+      "seconds": 453,
+      "emotion": "neutral",
+      "confidence": 0.40293440268528313
+    },
+    {
+      "time": "07:36",
+      "seconds": 456,
+      "emotion": "happy",
+      "confidence": 0.39822797068236593
+    },
+    {
+      "time": "07:36",
+      "seconds": 456,
+      "emotion": "neutral",
+      "confidence": 0.47532761662536005
+    }
+  ]
+}
