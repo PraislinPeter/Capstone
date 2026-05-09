@@ -1,4 +1,4 @@
-# Capstone Assistive Emotion Monitoring Platform
+# AURA-Adaptive Understanding Robot for Autism
 
 This repository contains a multi-part assistive healthcare project with:
 - a Python/FastAPI backend for emotion detection and patient session tracking,
