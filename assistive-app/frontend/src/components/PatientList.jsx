@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Activity, History, UserPlus, UserCog } from 'lucide-react';
+import { API_BASE } from '../config';
 
 export default function PatientList() {
   const [patients, setPatients] = useState([]);
@@ -9,7 +10,7 @@ export default function PatientList() {
 
   // --- FETCH DATA FROM BACKEND ---
   useEffect(() => {
-    fetch('http://localhost:8000/patients')
+    fetch(`${API_BASE}/patients`)
       .then((res) => res.json())
       .then((data) => {
         setPatients(data);

@@ -1,0 +1,68 @@
+{
+  "session_id": "session_1777217422",
+  "date": "2026-04-26 19:31",
+  "duration": "01:23",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:03",
+      "seconds": 3,
+      "emotion": "Touched Mesh",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:03",
+      "seconds": 3,
+      "emotion": "neutral",
+      "confidence": 0.9715780223062447
+    },
+    {
+      "time": "00:30",
+      "seconds": 30,
+      "emotion": "angry",
+      "confidence": 0.4611389544280771
+    },
+    {
+      "time": "00:32",
+      "seconds": 32,
+      "emotion": "neutral",
+      "confidence": 0.5534310820900941
+    },
+    {
+      "time": "00:38",
+      "seconds": 38,
+      "emotion": "angry",
+      "confidence": 0.42438570622338234
+    },
+    {
+      "time": "00:40",
+      "seconds": 40,
+      "emotion": "neutral",
+      "confidence": 0.47193093658454455
+    },
+    {
+      "time": "00:59",
+      "seconds": 59,
+      "emotion": "happy",
+      "confidence": 0.43567810768249515
+    },
+    {
+      "time": "00:59",
+      "seconds": 59,
+      "emotion": "neutral",
+      "confidence": 0.4718469264942786
+    },
+    {
+      "time": "01:18",
+      "seconds": 78,
+      "emotion": "happy",
+      "confidence": 0.5980183815282339
+    }
+  ]
+}

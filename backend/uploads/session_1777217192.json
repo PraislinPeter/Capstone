@@ -1,0 +1,227 @@
+{
+  "session_id": "session_1777217192",
+  "date": "2026-04-26 19:30",
+  "duration": "03:32",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:09",
+      "seconds": 9,
+      "emotion": "happy",
+      "confidence": 0.47042478818600436
+    },
+    {
+      "time": "00:12",
+      "seconds": 12,
+      "emotion": "neutral",
+      "confidence": 0.5768129244218163
+    },
+    {
+      "time": "00:17",
+      "seconds": 17,
+      "emotion": "happy",
+      "confidence": 0.443206497832756
+    },
+    {
+      "time": "00:18",
+      "seconds": 18,
+      "emotion": "neutral",
+      "confidence": 0.5451693523110325
+    },
+    {
+      "time": "00:31",
+      "seconds": 31,
+      "emotion": "happy",
+      "confidence": 0.4997478768672809
+    },
+    {
+      "time": "00:34",
+      "seconds": 34,
+      "emotion": "neutral",
+      "confidence": 0.4990598095774686
+    },
+    {
+      "time": "00:35",
+      "seconds": 35,
+      "emotion": "happy",
+      "confidence": 0.5817716514793436
+    },
+    {
+      "time": "00:39",
+      "seconds": 39,
+      "emotion": "neutral",
+      "confidence": 0.6233510806510815
+    },
+    {
+      "time": "01:09",
+      "seconds": 69,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "01:09",
+      "seconds": 69,
+      "emotion": "neutral",
+      "confidence": 0.6767446219939829
+    },
+    {
+      "time": "01:14",
+      "seconds": 74,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "01:14",
+      "seconds": 74,
+      "emotion": "neutral",
+      "confidence": 0.6767446219939829
+    },
+    {
+      "time": "01:19",
+      "seconds": 79,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "01:19",
+      "seconds": 79,
+      "emotion": "neutral",
+      "confidence": 0.4764542704810369
+    },
+    {
+      "time": "01:28",
+      "seconds": 88,
+      "emotion": "happy",
+      "confidence": 0.4033279975803949
+    },
+    {
+      "time": "01:29",
+      "seconds": 89,
+      "emotion": "neutral",
+      "confidence": 0.2865358910322245
+    },
+    {
+      "time": "01:36",
+      "seconds": 96,
+      "emotion": "happy",
+      "confidence": 0.5149365634745586
+    },
+    {
+      "time": "01:36",
+      "seconds": 96,
+      "emotion": "neutral",
+      "confidence": 0.5990711521167111
+    },
+    {
+      "time": "01:37",
+      "seconds": 97,
+      "emotion": "happy",
+      "confidence": 0.5559530232172725
+    },
+    {
+      "time": "01:38",
+      "seconds": 98,
+      "emotion": "neutral",
+      "confidence": 0.5919091590465815
+    },
+    {
+      "time": "02:12",
+      "seconds": 132,
+      "emotion": "happy",
+      "confidence": 0.409837270969208
+    },
+    {
+      "time": "02:14",
+      "seconds": 134,
+      "emotion": "fear",
+      "confidence": 0.40881954446349417
+    },
+    {
+      "time": "02:16",
+      "seconds": 136,
+      "emotion": "neutral",
+      "confidence": 0.3393109036486578
+    },
+    {
+      "time": "02:19",
+      "seconds": 139,
+      "emotion": "fear",
+      "confidence": 0.4798048745904365
+    },
+    {
+      "time": "02:20",
+      "seconds": 140,
+      "emotion": "neutral",
+      "confidence": 0.5613946254788994
+    },
+    {
+      "time": "02:21",
+      "seconds": 141,
+      "emotion": "fear",
+      "confidence": 0.4971468943256917
+    },
+    {
+      "time": "02:21",
+      "seconds": 141,
+      "emotion": "neutral",
+      "confidence": 0.5815755359037231
+    },
+    {
+      "time": "02:26",
+      "seconds": 146,
+      "emotion": "fear",
+      "confidence": 0.4804095057468425
+    },
+    {
+      "time": "02:26",
+      "seconds": 146,
+      "emotion": "neutral",
+      "confidence": 0.5728530316725813
+    },
+    {
+      "time": "02:28",
+      "seconds": 148,
+      "emotion": "fear",
+      "confidence": 0.440844992472305
+    },
+    {
+      "time": "02:29",
+      "seconds": 149,
+      "emotion": "neutral",
+      "confidence": 0.5740475606385038
+    },
+    {
+      "time": "02:51",
+      "seconds": 171,
+      "emotion": "happy",
+      "confidence": 0.534737523626758
+    },
+    {
+      "time": "02:53",
+      "seconds": 173,
+      "emotion": "neutral",
+      "confidence": 0.5325892436905083
+    },
+    {
+      "time": "03:23",
+      "seconds": 203,
+      "emotion": "Touched Mesh",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "03:23",
+      "seconds": 203,
+      "emotion": "neutral",
+      "confidence": 0.9090667351076671
+    }
+  ]
+}

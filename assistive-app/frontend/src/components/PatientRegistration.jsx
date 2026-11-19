@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserPlus, Save, AlertCircle } from 'lucide-react';
+import { API_BASE } from '../config';
 
 export default function PatientRegistration() {
   const navigate = useNavigate();
@@ -42,7 +43,7 @@ export default function PatientRegistration() {
     setSubmitting(true);
     
     try {
-      const res = await fetch('http://localhost:8000/patients', {
+      const res = await fetch(`${API_BASE}/patients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)

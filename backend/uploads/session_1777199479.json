@@ -1,0 +1,26 @@
+{
+  "session_id": "session_1777199479",
+  "date": "2026-04-26 14:31",
+  "duration": "00:34",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:05",
+      "seconds": 5,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:05",
+      "seconds": 5,
+      "emotion": "neutral",
+      "confidence": 0.8537847904478377
+    }
+  ]
+}

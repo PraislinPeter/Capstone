@@ -1,0 +1,50 @@
+{
+  "session_id": "session_1777199727",
+  "date": "2026-04-26 14:35",
+  "duration": "00:31",
+  "timeline": [
+    {
+      "time": "00:00",
+      "seconds": 0,
+      "emotion": "neutral",
+      "confidence": 1.0
+    },
+    {
+      "time": "00:11",
+      "seconds": 11,
+      "emotion": "Touched Beads",
+      "confidence": 1.0,
+      "is_interaction": true
+    },
+    {
+      "time": "00:11",
+      "seconds": 11,
+      "emotion": "neutral",
+      "confidence": 0.9211944708223229
+    },
+    {
+      "time": "00:17",
+      "seconds": 17,
+      "emotion": "angry",
+      "confidence": 0.5245979233468535
+    },
+    {
+      "time": "00:18",
+      "seconds": 18,
+      "emotion": "neutral",
+      "confidence": 0.5630383029432865
+    },
+    {
+      "time": "00:27",
+      "seconds": 27,
+      "emotion": "happy",
+      "confidence": 0.5396519613225408
+    },
+    {
+      "time": "00:28",
+      "seconds": 28,
+      "emotion": "neutral",
+      "confidence": 0.5463275913563493
+    }
+  ]
+}
