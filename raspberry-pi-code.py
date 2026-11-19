@@ -29,6 +29,340 @@ import urllib.request
 import urllib.error
 import numpy as np
 import os
+import subprocess
+
+try:
+    from openai import OpenAI
+    HAS_OPENAI = True
+except ImportError:
+    HAS_OPENAI = False
+
+# <-- Replace with your OpenAI API Key
+OPENAI_API_KEY = "API_KEY_GOES_HERE"
+
+
+current_face_state = "happy"
+emotion_history = []
+last_api_emotion = ""
+waiting_for_page = False
+selected_page = None
+cancel_conversation = False
+think_state = 1
+think_toggle_time = 0.0
+is_listening = False
+
+PAGES_INFO = {
+    "1": {"type": "emotion", "name": "neutral", "description": "a picture showing a boy and a girl sitting at a desk showing no emotion"},
+    "2": {"type": "emotion", "name": "happy", "description": "a picture showing the same boy and girl sitting on the ground, the boy is holding a gift and the girl is showing happiness"},
+    "3": {"type": "emotion", "name": "sad", "description": "a picture showing the boy and girl sitting sadly on the ground, the boy holding a broken toy car"},
+    "4": {"type": "emotion", "name": "anger", "description": "a picture showing the boy and girl both standing, the girl pointing at the boy accusingly, and the boy has his arms crossed"},
+    "5": {"type": "texture", "name": "smooth aluminium foil", "description": "an aluminium foil as a flat sheet"},
+    "6": {"type": "texture", "name": "smooth cotton", "description": "a brown sheet of cotton texture that is very smooth"},
+    "7": {"type": "texture", "name": "bumpy metallic", "description": "a metallic colored sheet like foil but it is horizontally bumpy all over, like a bumpy aluminium foil feel"},
+    "8": {"type": "texture", "name": "black sandpaper", "description": "a sheet of black sandpaper"},
+    "9": {"type": "texture", "name": "cotton balls", "description": "a sheet of cotton balls stuck to it all over so it is very soft and also bumpy"}
+}
+
+message_queue = []
+
+
+def add_to_history(text: str):
+    global emotion_history
+    emotion_history.append(text)
+    if len(emotion_history) > 7:
+        emotion_history.pop(0)
+
+
+def speak_text_sync(text: str):
+    """Generates and plays TTS using OpenAI. Runs synchronously."""
+    global cancel_conversation
+    if cancel_conversation:
+        return
+    print(f"\n[AURA SPEAKING]: {text}\n")
+    if not HAS_OPENAI or not OPENAI_API_KEY:
+        print(
+            "⚠️ [WARN] OpenAI not configured or 'openai' package missing. Skipping TTS.")
+        return
+
+    try:
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice="echo",
+            response_format="wav",
+            input=text
+        )
+        wav_path = "/tmp/aura_speech.wav"
+        response.write_to_file(wav_path)
+        if cancel_conversation:
+            return
+        subprocess.run(["aplay", "-q", wav_path])
+    except Exception as e:
+        print(f"❌ [ERROR] TTS Failed: {e}")
+
+
+def restart_conversation_flow():
+    global cancel_conversation
+    print("[INFO] Restarting conversation flow...")
+    cancel_conversation = True
+    subprocess.run(["pkill", "-9", "arecord"], stderr=subprocess.DEVNULL)
+    subprocess.run(["pkill", "-9", "aplay"], stderr=subprocess.DEVNULL)
+    time.sleep(0.5)
+
+    cancel_conversation = False
+
+    global current_face_state, waiting_for_page, selected_page
+    current_face_state = 'happy'
+    waiting_for_page = False
+    selected_page = None
+
+    asyncio.create_task(asyncio.to_thread(interactive_conversation_sync))
+
+
+def interactive_conversation_sync():
+    """Background conversation loop using OpenAI Whisper, GPT, and TTS."""
+    global current_face_state, waiting_for_page, selected_page, cancel_conversation
+
+    if not HAS_OPENAI or not OPENAI_API_KEY:
+        return
+
+    def speak(text):
+        if cancel_conversation:
+            return
+        speak_text_sync(text)
+
+    def listen_dynamic(max_record_time=12, silence_timeout=1.5, threshold=800):
+        global cancel_conversation, current_face_state, is_listening
+        if cancel_conversation:
+            return ""
+
+        current_face_state = 'thinking'
+        is_listening = True
+        print("\n🎤 [AURA LISTENING... SPEAK INTO THE USB MIC NOW]\n")
+
+        cmd = ["arecord", "-D", "plughw:1,0", "-f", "S16_LE",
+               "-r", "16000", "-c", "1", "-q", "-t", "raw"]
+        try:
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        except Exception:
+            cmd = ["arecord", "-f", "S16_LE", "-r",
+                   "16000", "-c", "1", "-q", "-t", "raw"]
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+        frames = []
+        has_started_speaking = False
+        silence_start_time = None
+        start_time = time.time()
+
+        import struct
+        import math
+
+        try:
+            while True:
+                if cancel_conversation:
+                    proc.kill()
+                    is_listening = False
+                    return ""
+
+                chunk = proc.stdout.read(4096)
+                if not chunk:
+                    break
+
+                frames.append(chunk)
+
+                count = len(chunk) // 2
+                if count == 0:
+                    continue
+                format_str = "<" + "h" * count
+                try:
+                    shorts = struct.unpack(format_str, chunk)
+                    rms = math.sqrt(sum(x*x for x in shorts) / count)
+                except:
+                    rms = 0
+
+                if rms > threshold:
+                    has_started_speaking = True
+                    silence_start_time = None
+                else:
+                    if has_started_speaking:
+                        if silence_start_time is None:
+                            silence_start_time = time.time()
+                        elif time.time() - silence_start_time > silence_timeout:
+                            break
+
+                if time.time() - start_time > max_record_time:
+                    break
+        finally:
+            proc.kill()
+
+        # Turn off indicator immediately after recording stops
+        is_listening = False
+
+        import wave
+        import os
+        wav_path = "/tmp/child_speech.wav"
+        with wave.open(wav_path, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(b"".join(frames))
+
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        try:
+            with open(wav_path, "rb") as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file
+                )
+            text = transcript.text.strip()
+            if text:
+                print(f"🗣️ [CHILD SAID]: {text}")
+                return text
+        except Exception as e:
+            print(f"⚠️ STT error: {e}")
+
+        return ""
+
+    time.sleep(3)
+    if cancel_conversation:
+        return
+
+    current_face_state = 'happy'
+    speak("Hello! I am AURA. How are you doing today?")
+
+    user_text = listen_dynamic(15, 2.0)
+    if cancel_conversation:
+        return
+
+    current_face_state = 'happy'
+    if user_text:
+        try:
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            sys_prompt = (
+                "You are AURA, a friendly robot. The user just answered how they are doing. "
+                "Acknowledge their response warmly, and then seamlessly transition into giving them these EXACT instructions: "
+                "'There is just one book in front of you. The first 4 pages are pictures and the next 5 are textures. "
+                "Please touch a texture or observe one of the pages of the book. Choose one page and type in a number.' "
+                "Do not wait for another prompt, just output the acknowledgment and instructions as one seamless response (2-3 sentences max)."
+            )
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_text}
+                ],
+                max_tokens=80
+            )
+            reply = response.choices[0].message.content.strip()
+            speak(reply)
+        except Exception as e:
+            speak("That is wonderful! There is just one book in front of you. The first 4 pages are pictures and the next 5 are textures. Please touch a texture or observe one of the pages of the book. Choose one page and type in a number.")
+    else:
+        speak("There is just one book in front of you. The first 4 pages are pictures and the next 5 are textures. Please touch a texture or observe one of the pages of the book. Choose one page and type in a number.")
+
+    while not cancel_conversation:
+        global waiting_for_page, selected_page
+        waiting_for_page = True
+        selected_page = None
+        current_face_state = 'thinking'
+
+        while waiting_for_page and not cancel_conversation:
+            time.sleep(0.1)
+
+        if cancel_conversation:
+            return
+
+        current_face_state = 'happy'
+
+        page_info = PAGES_INFO.get(selected_page)
+        p_name = "Unknown"
+        if page_info:
+            p_type = page_info["type"]
+            p_name = page_info["name"]
+            p_desc = page_info["description"]
+
+            if p_type == "emotion":
+                action_prompt = "Please see it."
+            else:
+                action_prompt = "Please touch it."
+
+            speak(
+                f"You have selected the number {selected_page}. This is {p_desc}. {action_prompt}")
+            time.sleep(3)
+            if cancel_conversation:
+                return
+            speak("How does it make you feel?")
+        else:
+            speak(
+                f"You have selected page {selected_page}. Look at it or feel it, and tell me how you feel.")
+
+        user_text2 = listen_dynamic(20, 2.0)
+        if cancel_conversation:
+            return
+
+        if user_text2:
+            try:
+                client = OpenAI(api_key=OPENAI_API_KEY)
+
+                # Get conversational response
+                reply_resp = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "The user is exploring a sensory book. They just shared how a specific page made them feel. Acknowledge their feeling and be encouraging. Keep it short, 1-2 sentences."},
+                        {"role": "user", "content": user_text2}
+                    ],
+                    max_tokens=50
+                )
+                reply_text = reply_resp.choices[0].message.content.strip()
+
+                # Get Sentiment for face state
+                sent_resp = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "Based on the user's description of feeling a texture or seeing an emotion, determine their emotion. Reply ONLY with one of the following: happy, sad, fear, disgust, surprise, anger."},
+                        {"role": "user", "content": user_text2}
+                    ],
+                    max_tokens=10
+                )
+                sentiment = sent_resp.choices[0].message.content.strip().lower()
+                sentiment = ''.join(c for c in sentiment if c.isalpha())
+
+                if sentiment in ['happy', 'surprise']:
+                    current_face_state = 'happy'
+                elif sentiment in ['sad', 'fear', 'disgust', 'anger']:
+                    current_face_state = 'sad'
+                else:
+                    current_face_state = 'happy'
+                    sentiment = 'unknown'
+
+                # Log to history and send via websocket queue
+                if sentiment != 'unknown':
+                    add_to_history(f"Felt {sentiment} about page {selected_page}")
+                    message_queue.append({
+                        "event": "child_feedback",
+                        "feedback_type": "emotion_choice",
+                        "value": sentiment.capitalize(),
+                        "texture_name": p_name
+                    })
+
+                speak(reply_text)
+            except Exception as e:
+                print(f"[GPT ERROR] {e}")
+                current_face_state = 'happy'
+                speak(
+                    "Thank you for sharing that with me. You did a great job exploring today!")
+        else:
+            current_face_state = 'happy'
+            speak("Thank you for exploring with me today!")
+        
+        if cancel_conversation:
+            return
+            
+        time.sleep(1)
+        speak("Would you like to do another page? If so, type in the page number.")
+
 
 # picamera2 is available on Pi OS Bookworm (libcamera stack).
 # It is NOT available on older OS (Bullseye/Buster) — the except handles that.
@@ -41,7 +375,8 @@ except ImportError:
 # --- DISPLAY ---
 # HAS_DISPLAY is True when the Pi has a screen attached (DISPLAY/WAYLAND_DISPLAY is set).
 # When SSH'd in headlessly with no X11 forwarding, imshow is silently skipped.
-HAS_DISPLAY = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+HAS_DISPLAY = bool(os.environ.get("DISPLAY")
+                   or os.environ.get("WAYLAND_DISPLAY"))
 
 # Shared state: written by receive_results, read by the display refresh in the capture loop
 current_emotion = "neutral"
@@ -49,120 +384,77 @@ current_emotion = "neutral"
 # Flight limiter: True while a frame is in-flight to the backend.
 # Prevents queue buildup when backend inference is slower than the send rate.
 _waiting_for_response = False
-_last_sent_time = 0.0        # used to timeout the flight limiter if backend sends no response
-FLIGHT_TIMEOUT = 8.0         # seconds before giving up waiting and sending the next frame
-
-_EMOTION_COLORS = {
-    'neutral':  (180, 180, 180),
-    'happy':    ( 60, 210,  80),
-    'sad':      (180,  90,  50),
-    'angry':    ( 50,  50, 220),
-    'fear':     (200,  80, 180),
-    'surprise': (  0, 200, 230),
-    'disgust':  ( 40, 160,  80),
-}
+# used to timeout the flight limiter if backend sends no response
+_last_sent_time = 0.0
+# seconds before giving up waiting and sending the next frame
+FLIGHT_TIMEOUT = 8.0
 
 
-def draw_emotion_face(emotion: str) -> np.ndarray:
-    """Render a full-screen (1280x720) emotion face using OpenCV primitives."""
+def draw_face(state: str) -> np.ndarray:
     W, H = 1280, 720
     canvas = np.zeros((H, W, 3), dtype=np.uint8)
-    canvas[:] = (25, 20, 35)          # dark purple-black background
 
-    e = emotion.lower()
-    color = _EMOTION_COLORS.get(e, (180, 180, 180))
-    cx, cy, r = W // 2, H // 2 - 20, 175
+    cx, cy = W // 2, H // 2 - 20
+    eye_y = cy - 50
+    lx, rx = cx - 120, cx + 120
 
-    # Soft glow ring
-    glow = tuple(min(255, int(c * 0.35)) for c in color)
-    cv2.circle(canvas, (cx, cy), r + 22, glow, -1)
-    # Face
-    cv2.circle(canvas, (cx, cy), r, color, -1)
-    cv2.circle(canvas, (cx, cy), r, (255, 255, 255), 3)
+    eye_radius = 60
+    pupil_radius = 25
 
-    eye_y  = cy - 50
-    lx, rx = cx - 65, cx + 65
-    brow_y = eye_y - 38
+    lx_pupil, ly_pupil = lx, eye_y
+    rx_pupil, ry_pupil = rx, eye_y
 
-    # ── Eyebrows ──────────────────────────────────────────────────
-    if e == 'angry':
-        cv2.line(canvas, (lx - 30, brow_y - 8),  (lx + 22, brow_y + 18), (15, 15, 15), 8)
-        cv2.line(canvas, (rx - 22, brow_y + 18), (rx + 30, brow_y - 8),  (15, 15, 15), 8)
-    elif e == 'sad':
-        cv2.line(canvas, (lx - 22, brow_y + 12), (lx + 22, brow_y - 12), (15, 15, 15), 6)
-        cv2.line(canvas, (rx - 22, brow_y - 12), (rx + 22, brow_y + 12), (15, 15, 15), 6)
-    elif e in ('surprise', 'fear'):
-        cv2.ellipse(canvas, (lx, brow_y - 8), (26, 9), 0, 200, 340, (15, 15, 15), 6)
-        cv2.ellipse(canvas, (rx, brow_y - 8), (26, 9), 0, 200, 340, (15, 15, 15), 6)
+    if state == 'happy':
+        pass
+    elif state == 'sad':
+        lx_pupil += 15
+        ly_pupil += 15
+        rx_pupil += 15
+        ry_pupil += 15
+    elif state == 'thinking1':
+        lx_pupil += 20
+        ly_pupil -= 20
+        rx_pupil += 20
+        ry_pupil -= 20
+    elif state == 'thinking2':
+        lx_pupil -= 20
+        ly_pupil -= 20
+        rx_pupil -= 20
+        ry_pupil -= 20
+
+    cv2.circle(canvas, (lx, eye_y), eye_radius, (255, 255, 255), -1)
+    cv2.circle(canvas, (rx, eye_y), eye_radius, (255, 255, 255), -1)
+
+    cv2.circle(canvas, (lx_pupil, ly_pupil), pupil_radius, (0, 0, 0), -1)
+    cv2.circle(canvas, (rx_pupil, ry_pupil), pupil_radius, (0, 0, 0), -1)
+
+    my = cy + 100
+    if state == 'happy':
+        cv2.ellipse(canvas, (cx, my), (80, 50), 0, 0, 180, (255, 255, 255), 10)
+    elif state == 'sad':
+        cv2.ellipse(canvas, (cx, my + 50), (80, 50),
+                    0, 180, 360, (255, 255, 255), 10)
     else:
-        cv2.line(canvas, (lx - 24, brow_y), (lx + 24, brow_y), (15, 15, 15), 6)
-        cv2.line(canvas, (rx - 24, brow_y), (rx + 24, brow_y), (15, 15, 15), 6)
+        cv2.circle(canvas, (cx + 40, my), 15, (255, 255, 255), 8)
 
-    # ── Eyes ──────────────────────────────────────────────────────
-    if e in ('surprise', 'fear'):
-        cv2.circle(canvas, (lx, eye_y), 25, (255, 255, 255), -1)
-        cv2.circle(canvas, (rx, eye_y), 25, (255, 255, 255), -1)
-        cv2.circle(canvas, (lx, eye_y), 13, (25, 25, 25), -1)
-        cv2.circle(canvas, (rx, eye_y), 13, (25, 25, 25), -1)
-    elif e == 'angry':
-        cv2.ellipse(canvas, (lx, eye_y), (22, 12), 0, 0, 360, (255, 255, 255), -1)
-        cv2.ellipse(canvas, (rx, eye_y), (22, 12), 0, 0, 360, (255, 255, 255), -1)
-        cv2.circle(canvas, (lx, eye_y), 8, (25, 25, 25), -1)
-        cv2.circle(canvas, (rx, eye_y), 8, (25, 25, 25), -1)
-    elif e == 'disgust':
-        # One squinted eye, one normal
-        cv2.ellipse(canvas, (lx, eye_y), (20, 10), 0, 0, 360, (255, 255, 255), -1)
-        cv2.circle(canvas, (lx, eye_y), 7, (25, 25, 25), -1)
-        cv2.circle(canvas, (rx, eye_y), 21, (255, 255, 255), -1)
-        cv2.circle(canvas, (rx, eye_y), 10, (25, 25, 25), -1)
-        cv2.circle(canvas, (rx + 6, eye_y - 6), 4, (200, 200, 200), -1)
-    else:
-        cv2.circle(canvas, (lx, eye_y), 20, (255, 255, 255), -1)
-        cv2.circle(canvas, (rx, eye_y), 20, (255, 255, 255), -1)
-        cv2.circle(canvas, (lx, eye_y), 10, (25, 25, 25), -1)
-        cv2.circle(canvas, (rx, eye_y), 10, (25, 25, 25), -1)
-        cv2.circle(canvas, (lx + 5, eye_y - 5), 4, (200, 200, 200), -1)
-        cv2.circle(canvas, (rx + 5, eye_y - 5), 4, (200, 200, 200), -1)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    start_y = H - 35 * len(emotion_history) - 20
+    for i, item in enumerate(emotion_history):
+        cv2.putText(canvas, item, (30, start_y + i * 35),
+                    font, 1.0, (200, 200, 200), 2, cv2.LINE_AA)
 
-    # ── Mouth ─────────────────────────────────────────────────────
-    my = cy + 70
-    if e == 'happy':
-        cv2.ellipse(canvas, (cx, my - 15), (65, 48), 0, 0, 180, (20, 20, 20), 10)
-    elif e == 'sad':
-        cv2.ellipse(canvas, (cx, my + 28), (58, 42), 0, 180, 360, (20, 20, 20), 10)
-    elif e == 'surprise':
-        cv2.ellipse(canvas, (cx, my + 8), (28, 40), 0, 0, 360, (20, 20, 20), -1)
-        cv2.ellipse(canvas, (cx, my + 8), (28, 40), 0, 0, 360, (255, 255, 255), 4)
-    elif e == 'angry':
-        cv2.ellipse(canvas, (cx, my + 22), (52, 28), 0, 195, 345, (20, 20, 20), 9)
-    elif e == 'fear':
-        pts = np.array([[cx-44, my], [cx-22, my+18], [cx-2, my-4],
-                        [cx+18, my+18], [cx+38, my], [cx+52, my+12]], np.int32)
-        cv2.polylines(canvas, [pts.reshape(-1, 1, 2)], False, (20, 20, 20), 8)
-    elif e == 'disgust':
-        cv2.line(canvas, (cx - 44, my + 8),  (cx,       my - 12), (20, 20, 20), 9)
-        cv2.line(canvas, (cx,       my - 12), (cx + 44, my + 16), (20, 20, 20), 9)
-    else:  # neutral
-        cv2.line(canvas, (cx - 44, my), (cx + 44, my), (20, 20, 20), 9)
-
-    # ── Big emotion label (bottom-center) ─────────────────────────
-    label = emotion.upper()
-    font, fs, th = cv2.FONT_HERSHEY_DUPLEX, 2.2, 4
-    (tw, _), _ = cv2.getTextSize(label, font, fs, th)
-    lx_t, ly_t = (W - tw) // 2, H - 45
-    cv2.putText(canvas, label, (lx_t + 3, ly_t + 3), font, fs, (0, 0, 0), th + 2, cv2.LINE_AA)
-    cv2.putText(canvas, label, (lx_t,     ly_t),     font, fs, color,     th,     cv2.LINE_AA)
-
-    # ── Branding (top-left) ────────────────────────────────────────
-    cv2.putText(canvas, "AURA", (18, 36),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (130, 100, 160), 2, cv2.LINE_AA)
+    global is_listening
+    if is_listening:
+        cv2.circle(canvas, (W - 50, 50), 15, (0, 0, 255), -1)
+        cv2.putText(canvas, "LISTENING", (W - 190, 58),
+                    font, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
 
     return canvas
 
 
 # --- CONFIGURATION ---
 # Change THIS to the actual IP address of the machine running backend/main.py
-BACKEND_URL = "ws://172.20.10.5:8000/ws/stream"
+BACKEND_URL = "ws://172.20.10.3:8000/ws/stream"
 
 # Derived HTTP base URL for pre-flight REST calls (no trailing slash)
 BACKEND_HTTP_URL = BACKEND_URL.replace("ws://", "http://").split("/ws/")[0]
@@ -190,7 +482,8 @@ def ensure_patient_exists():
             print(f"[ERROR] Unexpected HTTP {e.code} when checking patient.")
             return False
         # Patient not found — create a minimal placeholder record
-        print(f"[WARN] Patient {PATIENT_ID} not found. Creating placeholder...")
+        print(
+            f"[WARN] Patient {PATIENT_ID} not found. Creating placeholder...")
         payload = json.dumps({
             "name": f"Patient {PATIENT_ID}",
             "external_id": f"PI-{PATIENT_ID}"
@@ -230,11 +523,15 @@ async def receive_results(websocket):
             if "emotion" in data:
                 timestamp = data.get('timestamp', '00:00')
                 emotion = data['emotion'].upper()
-                current_emotion = data['emotion'].lower()  # update the display
+                current_emotion = data['emotion'].lower()
                 _waiting_for_response = False  # unblock the send loop
-                # Print out a clean log line
                 print(
                     f"[AI RESPONSE] Time: {timestamp} | Dominant Emotion: {emotion}")
+
+                global last_api_emotion
+                if emotion != last_api_emotion:
+                    last_api_emotion = emotion
+                    add_to_history(f"{timestamp} - {emotion}")
 
     except websockets.exceptions.ConnectionClosed:
         print("\n[INFO] Connection closed by server.")
@@ -248,7 +545,7 @@ async def stream_video():
     them iteratively to the backend WebSocket stream.
     """
     global _waiting_for_response, _last_sent_time
-    url = f"{BACKEND_URL}/{PATIENT_ID}"
+    url = f"{BACKEND_URL}/{PATIENT_ID}/child"
     print(f"==================================================")
     print(f"Connecting to Backend Stream: {url}")
     print(f"==================================================")
@@ -276,7 +573,8 @@ async def stream_video():
                     picam2.start()
                     print("📷 Camera backend: picamera2 (libcamera)")
                 except Exception as cam_err:
-                    print(f"⚠️  picamera2 failed ({cam_err}), falling back to OpenCV...")
+                    print(
+                        f"⚠️  picamera2 failed ({cam_err}), falling back to OpenCV...")
                     picam2 = None
 
             if picam2 is None:
@@ -285,7 +583,8 @@ async def stream_video():
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                 if not cap.isOpened():
                     print("❌ ERROR: Could not open the camera.")
-                    print("Hint: On Bookworm, ensure picamera2 is installed and the camera is enabled.")
+                    print(
+                        "Hint: On Bookworm, ensure picamera2 is installed and the camera is enabled.")
                     return
                 print("📷 Camera backend: OpenCV (V4L2/default)")
 
@@ -297,11 +596,17 @@ async def stream_video():
                     cv2.namedWindow("Emotion Monitor", cv2.WINDOW_NORMAL)
                     cv2.setWindowProperty("Emotion Monitor", cv2.WND_PROP_FULLSCREEN,
                                           cv2.WINDOW_FULLSCREEN)
-                    cv2.imshow("Emotion Monitor", draw_emotion_face("neutral"))
+                    cv2.imshow("Emotion Monitor", draw_face("happy"))
                     cv2.waitKey(1)
                 except Exception as disp_err:
-                    print(f"⚠️  Display unavailable ({disp_err}), continuing without GUI.")
+                    print(
+                        f"⚠️  Display unavailable ({disp_err}), continuing without GUI.")
                     show_display = False
+
+            # --- STARTUP INTERACTIVE CONVERSATION ---
+            # Run the voice conversation loop in the background so it doesn't block video streaming!
+            asyncio.create_task(asyncio.to_thread(
+                interactive_conversation_sync))
 
             print(f"📷 Camera Live. Streaming at target {FPS_LIMIT} FPS...")
             print("Press Ctrl+C to terminate the session.\n")
@@ -332,15 +637,48 @@ async def stream_video():
                     # Refresh the display on every loop tick so it never freezes while waiting
                     if show_display:
                         try:
-                            cv2.imshow("Emotion Monitor", draw_emotion_face(current_emotion))
-                            if cv2.waitKey(1) & 0xFF == ord('q'):
+                            global think_state, think_toggle_time, waiting_for_page, selected_page
+                            render_state = current_face_state
+                            if current_face_state == "thinking":
+                                if time.time() - think_toggle_time > 0.8:
+                                    think_state = 2 if think_state == 1 else 1
+                                    think_toggle_time = time.time()
+                                render_state = f"thinking{think_state}"
+
+                            cv2.imshow("Emotion Monitor",
+                                       draw_face(render_state))
+                            key = cv2.waitKey(1) & 0xFF
+                            if key == ord('q'):
                                 break
-                        except Exception:
+                            elif key == ord('r'):
+                                restart_conversation_flow()
+                            elif chr(key).isdigit():
+                                if waiting_for_page:
+                                    selected_page = chr(key)
+                                    waiting_for_page = False
+
+                                    p_info = PAGES_INFO.get(selected_page, {})
+                                    p_name = p_info.get("name", "Unknown")
+
+                                    add_to_history(
+                                        f"User selected page {selected_page}: {p_name}")
+
+                                    message_queue.append({
+                                        "event": "child_interaction",
+                                        "texture_name": p_name,
+                                        "page": selected_page
+                                    })
+                        except Exception as e:
+                            print(f"Display error: {e}")
                             show_display = False
 
                     # Auto-clear the flight limiter if the backend took too long (e.g. no face detected)
                     if _waiting_for_response and (time.time() - _last_sent_time) > FLIGHT_TIMEOUT:
                         _waiting_for_response = False
+
+                    while message_queue:
+                        msg = message_queue.pop(0)
+                        await websocket.send(json.dumps(msg))
 
                     # Skip sending if still waiting for a response
                     if _waiting_for_response:
@@ -349,7 +687,8 @@ async def stream_video():
 
                     # Encode JPEG + base64 together off the event loop so receive_results isn't starved
                     def _encode(f):
-                        _, buf = cv2.imencode('.jpg', f, [int(cv2.IMWRITE_JPEG_QUALITY), 50])  # pylint: disable=no-member
+                        _, buf = cv2.imencode(
+                            '.jpg', f, [int(cv2.IMWRITE_JPEG_QUALITY), 50])  # pylint: disable=no-member
                         return base64.b64encode(buf).decode('utf-8')
 
                     jpg_as_text = await asyncio.to_thread(_encode, frame)
@@ -400,3 +739,4 @@ if __name__ == "__main__":
         asyncio.run(stream_video())
     except KeyboardInterrupt:
         print("\n[INFO] Streaming stopped manually by user.")
+
